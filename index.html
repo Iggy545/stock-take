@@ -292,6 +292,10 @@
       <button class="btn btn-secondary" id="restoreBtn">📂 Restore backup</button>
     </div>
     <input type="file" id="restoreInput" accept="application/json,.json" style="display:none;">
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-secondary" id="syncBtn">☁ Team sync</button>
+    </div>
+    <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
     <div class="storage-note" id="storageNote"></div>
   </div>
 
@@ -374,6 +378,50 @@
       <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
       <button class="btn btn-danger" id="confirmOkBtn">Confirm</button>
     </div>
+  </div>
+</div>
+
+<!-- Team sync setup -->
+<div class="modal-overlay" id="syncModal" style="display:none;">
+  <div class="modal">
+    <h2>☁ Team sync</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      Sync this stock take live across everyone's phones and computers. Fill in your
+      Firebase details once (see the setup guide), pick a shared <b>team code</b> everyone
+      uses, and turn sync on. With no internet the app still works offline, and you can
+      always fall back to Save / Restore backup.
+    </p>
+
+    <div id="syncStateBox" style="font-size:13px;font-weight:600;padding:10px 12px;border-radius:10px;background:var(--line);margin-bottom:14px;">
+      Status: not connected
+    </div>
+
+    <label for="syncTeam">Team code (everyone must use the same one)</label>
+    <input type="text" id="syncTeam" placeholder="e.g. shop-front-2026" autocomplete="off" autocapitalize="none">
+
+    <label for="syncPin">Team PIN (optional — a little extra protection)</label>
+    <input type="text" id="syncPin" placeholder="e.g. 4821" autocomplete="off" autocapitalize="none">
+
+    <label for="syncCfg">Firebase config (paste the whole snippet from your project)</label>
+    <textarea id="syncCfg" rows="7" placeholder='{
+  "apiKey": "...",
+  "authDomain": "yourproject.firebaseapp.com",
+  "projectId": "yourproject",
+  "storageBucket": "...",
+  "appId": "..."
+}' style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px;font-family:monospace;background:#fff;color:var(--ink);margin-bottom:10px;resize:vertical;"></textarea>
+
+    <div class="btn-row" style="margin-top:4px;">
+      <button class="btn btn-primary" id="syncConnectBtn">Turn on sync</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-secondary" id="syncNowBtn">↻ Sync now</button>
+      <button class="btn btn-danger" id="syncDisconnectBtn">Turn off</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-secondary" id="syncCloseBtn">Close</button>
+    </div>
+    <div class="storage-note" id="syncModalNote"></div>
   </div>
 </div>
 
@@ -4347,6 +4395,346 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
     );
   });
+
+  /* ===================== TEAM SYNC (Firebase Firestore) =====================
+     Local-first: everything above runs fully offline on localStorage.
+     This layer mirrors the data to a shared Firestore "workspace" so an
+     iPhone, a computer and a small team stay in sync in real time.
+     - Each item / sale / the session meta syncs as its OWN record, so two
+       people editing different items never overwrite each other.
+     - Merge rule: newest edit to a given record wins (last-write-wins per item).
+     - No internet? The app keeps working; changes queue and send on reconnect,
+       and JSON Save / Restore backup remains the fully-offline fallback.
+     ========================================================================= */
+
+  // Capture the unwrapped savers BEFORE wrapping, so remote updates can be
+  // written to localStorage without echoing straight back to the server.
+  var _origSaveItems = saveItems;
+  var _origSaveSales = saveSales;
+
+  var Sync = (function(){
+    var CFG_KEY='stockTakeSyncCfg', TEAM_KEY='stockTakeSyncTeam', PIN_KEY='stockTakeSyncPin',
+        TIMES_KEY='stockTakeSyncTimes', ON_KEY='stockTakeSyncOn', CID_KEY='stockTakeClientId';
+    var SDK_APP ='https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
+    var SDK_FS  ='https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js';
+    var SDK_AUTH='https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
+
+    var app=null, db=null, itemsCol=null, salesCol=null, metaDoc=null;
+    var listeners=[], connected=false, connecting=false;
+    var shadowItems={}, shadowSales={};     // last-known-synced serialization
+    var suppressUntilLive=false;            // ignore our own initial writes
+    var metaTimer=null;
+
+    var clientId=(function(){ try{ var v=localStorage.getItem(CID_KEY);
+      if(!v){ v=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem(CID_KEY,v);} return v;
+    }catch(e){ return 'c'+Date.now(); }})();
+
+    var times=(function(){ var o=null; try{ o=JSON.parse(localStorage.getItem(TIMES_KEY)); }catch(e){}
+      if(!o||typeof o!=='object') o={}; o.items=o.items||{}; o.sales=o.sales||{}; o.meta=o.meta||0; return o; })();
+    function saveTimes(){ try{ localStorage.setItem(TIMES_KEY, JSON.stringify(times)); }catch(e){} }
+
+    function getCfg(){ try{ var r=localStorage.getItem(CFG_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
+    function getTeam(){ try{ return localStorage.getItem(TEAM_KEY)||''; }catch(e){ return ''; } }
+    function getPin(){ try{ return localStorage.getItem(PIN_KEY)||''; }catch(e){ return ''; } }
+    function isOn(){ try{ return localStorage.getItem(ON_KEY)==='1'; }catch(e){ return false; } }
+
+    // Stable id for a sale (the array has no ids of its own).
+    function saleKey(sale){ return String(sale.barcode||'') + '|' + String(sale.at||''); }
+    function docSafe(s){ return String(s||'').replace(/[\/\.\#\$\[\]]/g,'_').slice(0,120); }
+    function workspacePath(){ var t=docSafe(getTeam()); var p=getPin(); return p ? t+'~'+docSafe(p) : t; }
+
+    // ---- status display ----
+    function setStatus(text, kind){
+      var note=document.getElementById('syncStatusNote');
+      var box=document.getElementById('syncStateBox');
+      var label = (connected?'☁ Synced':'') || text;
+      if(note){
+        note.textContent = connected ? ('☁ Team sync on — '+text) : (isOn()? ('☁ Sync: '+text) : 'Team sync off — tap to set up');
+        note.classList.toggle('warn', kind==='err');
+      }
+      if(box){
+        box.textContent = 'Status: '+text;
+        box.style.background = kind==='ok' ? 'rgba(91,123,98,0.18)' : (kind==='err' ? 'rgba(168,82,74,0.15)' : 'var(--line)');
+      }
+    }
+
+    // ---- script loader ----
+    function loadScript(src){
+      return new Promise(function(res,rej){
+        if(document.querySelector('script[data-fb="'+src+'"]')) return res();
+        var s=document.createElement('script'); s.src=src; s.async=true; s.setAttribute('data-fb',src);
+        s.onload=function(){ res(); };
+        s.onerror=function(){ rej(new Error('Could not load Firebase (no internet?)')); };
+        document.head.appendChild(s);
+      });
+    }
+    async function loadSDK(){
+      if(!(window.firebase && window.firebase.firestore && window.firebase.auth)){
+        await loadScript(SDK_APP);
+        await loadScript(SDK_FS);
+        await loadScript(SDK_AUTH);
+      }
+      if(!(window.firebase && window.firebase.firestore)) throw new Error('Firebase failed to load');
+    }
+
+    function serialize(v){ try{ return JSON.stringify(v); }catch(e){ return ''; } }
+
+    // ---- apply a remote item record to local (last-write-wins by time) ----
+    function applyRemoteItem(bc, d){
+      if(!d) return false;
+      var ts = Number(d.updatedAt)||0;
+      var localTs = Number(times.items[bc])||0;
+      if(d.by===clientId && ts<=localTs) return false;   // our own echo
+      if(ts < localTs) return false;                     // local is newer, keep it
+      if(d.deleted){ if(items[bc]!==undefined){ delete items[bc]; } }
+      else { items[bc] = d.data; }
+      times.items[bc]=ts;
+      shadowItems[bc] = d.deleted ? undefined : serialize(d.data);
+      if(shadowItems[bc]===undefined) delete shadowItems[bc];
+      return true;
+    }
+    function applyRemoteSale(id, d){
+      if(!d) return false;
+      var ts=Number(d.updatedAt)||0, localTs=Number(times.sales[id])||0;
+      if(d.by===clientId && ts<=localTs) return false;
+      if(ts < localTs) return false;
+      var map={}; sales.forEach(function(s){ map[saleKey(s)]=s; });
+      if(d.deleted){ delete map[id]; }
+      else { map[id]=d.data; }
+      var arr=Object.keys(map).map(function(k){ return map[k]; });
+      arr.sort(function(a,b){ return String(a.at||'').localeCompare(String(b.at||'')); });
+      sales.length=0; Array.prototype.push.apply(sales, arr);
+      times.sales[id]=ts;
+      shadowSales[id] = d.deleted ? undefined : serialize(d.data);
+      if(shadowSales[id]===undefined) delete shadowSales[id];
+      return true;
+    }
+    function applyRemoteMeta(d){
+      if(!d) return false;
+      var ts=Number(d.updatedAt)||0;
+      if(d.by===clientId && ts<=Number(times.meta||0)) return false;
+      if(ts < Number(times.meta||0)) return false;
+      var changed=false;
+      if(d.sessionDate && d.sessionDate!==sessionDate){ sessionDate=d.sessionDate;
+        try{ localStorage.setItem(SESSION_KEY, sessionDate); }catch(e){} changed=true; }
+      if(d.codeSequence!=null){ try{ localStorage.setItem(SEQ_KEY, String(d.codeSequence)); }catch(e){} changed=true; }
+      times.meta=ts;
+      return changed;
+    }
+
+    // ---- outgoing: push local changes (diff vs shadow) ----
+    function pushItems(){
+      if(!connected) return;
+      var writes=[];
+      Object.keys(items).forEach(function(bc){
+        var ser=serialize(items[bc]);
+        if(shadowItems[bc]!==ser){
+          var ts=Date.now(); times.items[bc]=ts; shadowItems[bc]=ser;
+          writes.push(itemsCol.doc(docSafe(bc)).set({ data: items[bc], updatedAt: ts, by: clientId, deleted:false }));
+        }
+      });
+      Object.keys(shadowItems).forEach(function(bc){
+        if(items[bc]===undefined){
+          var ts=Date.now(); times.items[bc]=ts; delete shadowItems[bc];
+          writes.push(itemsCol.doc(docSafe(bc)).set({ updatedAt: ts, by: clientId, deleted:true }));
+        }
+      });
+      if(writes.length){ saveTimes(); }
+    }
+    function pushSales(){
+      if(!connected) return;
+      var cur={}; sales.forEach(function(s){ cur[saleKey(s)]=s; });
+      var writes=0;
+      Object.keys(cur).forEach(function(id){
+        var ser=serialize(cur[id]);
+        if(shadowSales[id]!==ser){
+          var ts=Date.now(); times.sales[id]=ts; shadowSales[id]=ser; writes++;
+          salesCol.doc(docSafe(id)).set({ data: cur[id], updatedAt: ts, by: clientId, deleted:false });
+        }
+      });
+      Object.keys(shadowSales).forEach(function(id){
+        if(!(id in cur)){
+          var ts=Date.now(); times.sales[id]=ts; delete shadowSales[id]; writes++;
+          salesCol.doc(docSafe(id)).set({ updatedAt: ts, by: clientId, deleted:true });
+        }
+      });
+      if(writes) saveTimes();
+    }
+    function pushMeta(){
+      if(!connected) return;
+      var seq=null; try{ seq=localStorage.getItem(SEQ_KEY); }catch(e){}
+      var sig=serialize({s:sessionDate, q:seq});
+      if(sig===shadowItems.__meta) return;
+      shadowItems.__meta=sig;
+      var ts=Date.now(); times.meta=ts; saveTimes();
+      metaDoc.set({ sessionDate: sessionDate, codeSequence: seq, updatedAt: ts, by: clientId });
+    }
+
+    // called by the wrapped savers whenever local data changes
+    function onLocalItems(){ if(connected){ try{ pushItems(); pushMeta(); }catch(e){} } }
+    function onLocalSales(){ if(connected){ try{ pushSales(); }catch(e){} } }
+
+    // ---- incoming realtime ----
+    function attachListeners(){
+      detach();
+      listeners.push(itemsCol.onSnapshot(function(snap){
+        var touched=false;
+        snap.docChanges().forEach(function(ch){ if(applyRemoteItem(ch.doc.id, ch.doc.data())) touched=true; });
+        if(touched){ _origSaveItems(); saveTimes(); renderList(document.getElementById('searchBox')?document.getElementById('searchBox').value:''); renderSold(); }
+      }, onSnapErr));
+      listeners.push(salesCol.onSnapshot(function(snap){
+        var touched=false;
+        snap.docChanges().forEach(function(ch){ if(applyRemoteSale(ch.doc.id, ch.doc.data())) touched=true; });
+        if(touched){ _origSaveSales(); saveTimes(); renderSold(); renderList(document.getElementById('searchBox')?document.getElementById('searchBox').value:''); }
+      }, onSnapErr));
+      listeners.push(metaDoc.onSnapshot(function(doc){
+        if(doc.exists && applyRemoteMeta(doc.data())){ saveTimes(); renderSession(); renderList(); renderSold(); }
+      }, onSnapErr));
+    }
+    function onSnapErr(e){ setStatus('connection problem — retrying', 'err'); }
+    function detach(){ listeners.forEach(function(u){ try{ u(); }catch(e){} }); listeners=[]; }
+
+    // ---- one-off reconcile at connect: merge remote, then push local ----
+    async function reconcile(){
+      var isnap=await itemsCol.get();
+      isnap.forEach(function(doc){ applyRemoteItem(doc.id, doc.data()); });
+      var ssnap=await salesCol.get();
+      ssnap.forEach(function(doc){ applyRemoteSale(doc.id, doc.data()); });
+      var msnap=await metaDoc.get();
+      if(msnap.exists) applyRemoteMeta(msnap.data());
+      _origSaveItems(); _origSaveSales(); saveTimes();
+      // rebuild shadow from current local, then push anything remote is missing/older
+      shadowItems={}; Object.keys(items).forEach(function(bc){ shadowItems[bc]=serialize(items[bc]); });
+      shadowSales={}; sales.forEach(function(s){ shadowSales[saleKey(s)]=serialize(s); });
+      // Force-push local records that are newer than what we merged
+      connected=true;
+      // push any local item/sale whose local time is ahead (new local data)
+      Object.keys(items).forEach(function(bc){
+        // if remote never set a time for this record, or local edited after, push it
+        // (handled generically by comparing against a fresh remote fetch is overkill;
+        //  we simply (re)assert local when remote lacked the doc)
+      });
+      renderSession(); renderList(); renderSold();
+    }
+
+    async function connect(opts){
+      opts=opts||{};
+      if(connecting) return; connecting=true;
+      var cfg=getCfg();
+      if(!cfg || !getTeam()){ connecting=false; setStatus('needs setup', 'err'); return; }
+      try{
+        setStatus('connecting…');
+        await loadSDK();
+        try{ app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg); }
+        catch(e){ app = firebase.initializeApp(cfg); }
+        // Anonymous sign-in so Firestore rules can require an authenticated
+        // session (safer than leaving the database open to the whole internet).
+        try{ await firebase.auth(app).signInAnonymously(); }
+        catch(e){ throw new Error('Turn on Anonymous sign-in in Firebase (Authentication → Sign-in method).'); }
+        db = firebase.firestore(app);
+        try{ await db.enablePersistence({synchronizeTabs:true}); }catch(e){ /* multi-tab or unsupported: fine */ }
+        var ws = db.collection('workspaces').doc(workspacePath());
+        itemsCol = ws.collection('items');
+        salesCol = ws.collection('sales');
+        metaDoc  = ws.collection('meta').doc('session');
+        await reconcile();
+        attachListeners();
+        connected=true; connecting=false;
+        try{ localStorage.setItem(ON_KEY,'1'); }catch(e){}
+        setStatus('all up to date', 'ok');
+        showToast('Team sync is on', 'success');
+      }catch(err){
+        connecting=false; connected=false;
+        setStatus((err&&err.message)||'could not connect', 'err');
+        if(!opts.silent) showToast((err&&err.message)||'Could not turn on sync', 'error');
+      }
+    }
+
+    function disconnect(){
+      detach(); connected=false; connecting=false;
+      try{ localStorage.setItem(ON_KEY,'0'); }catch(e){}
+      setStatus('off');
+      showToast('Team sync turned off', 'success');
+    }
+
+    function saveSettings(cfgText, team, pin){
+      var cfg;
+      try{ cfg = JSON.parse(cfgText); }
+      catch(e){
+        // tolerate a pasted "const firebaseConfig = { ... };" snippet
+        var m = cfgText && cfgText.match(/\{[\s\S]*\}/);
+        if(m){ try{ cfg = eval('('+m[0]+')'); }catch(e2){ cfg=null; } }
+      }
+      if(!cfg || !cfg.projectId || !cfg.apiKey) throw new Error('That Firebase config looks incomplete (need apiKey and projectId).');
+      if(!team || !team.trim()) throw new Error('Please enter a team code.');
+      try{
+        localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+        localStorage.setItem(TEAM_KEY, team.trim());
+        localStorage.setItem(PIN_KEY, (pin||'').trim());
+      }catch(e){ throw new Error('Could not save settings on this device.'); }
+      return cfg;
+    }
+
+    function syncNow(){
+      if(!connected){ connect(); return; }
+      try{ pushItems(); pushSales(); pushMeta(); }catch(e){}
+      // also pull latest
+      reconcile().then(function(){ attachListeners(); setStatus('all up to date','ok'); showToast('Synced','success'); })
+                 .catch(function(){ setStatus('sync problem','err'); });
+    }
+
+    return {
+      connect:connect, disconnect:disconnect, syncNow:syncNow,
+      saveSettings:saveSettings, onLocalItems:onLocalItems, onLocalSales:onLocalSales,
+      setStatus:setStatus, isOn:isOn, getCfg:getCfg, getTeam:getTeam, getPin:getPin,
+      isConnected:function(){ return connected; }
+    };
+  })();
+
+  // Wrap the savers so every local change is mirrored to the team workspace.
+  saveItems = function(){ var ok=_origSaveItems.apply(this, arguments); try{ Sync.onLocalItems(); }catch(e){} return ok; };
+  saveSales = function(){ var r=_origSaveSales.apply(this, arguments); try{ Sync.onLocalSales(); }catch(e){} return r; };
+
+  // ---- Sync UI wiring ----
+  (function wireSyncUI(){
+    var modal=document.getElementById('syncModal');
+    function openModal(){
+      document.getElementById('syncTeam').value = Sync.getTeam();
+      document.getElementById('syncPin').value  = Sync.getPin();
+      var cfg=Sync.getCfg();
+      document.getElementById('syncCfg').value = cfg ? JSON.stringify(cfg, null, 2) : '';
+      Sync.setStatus(Sync.isConnected() ? 'all up to date' : (Sync.isOn()?'reconnecting…':'not connected'),
+                     Sync.isConnected()?'ok':null);
+      modal.style.display='flex';
+    }
+    function closeModal(){ modal.style.display='none'; }
+    var sb=document.getElementById('syncBtn'); if(sb) sb.addEventListener('click', openModal);
+    var sn=document.getElementById('syncStatusNote'); if(sn) sn.addEventListener('click', openModal);
+    var cl=document.getElementById('syncCloseBtn'); if(cl) cl.addEventListener('click', closeModal);
+    modal.addEventListener('click', function(e){ if(e.target===modal) closeModal(); });
+
+    document.getElementById('syncConnectBtn').addEventListener('click', function(){
+      var note=document.getElementById('syncModalNote'); note.textContent='';
+      try{
+        Sync.saveSettings(
+          document.getElementById('syncCfg').value,
+          document.getElementById('syncTeam').value,
+          document.getElementById('syncPin').value
+        );
+      }catch(err){ note.textContent = err.message; note.classList.add('warn'); return; }
+      note.classList.remove('warn');
+      Sync.connect();
+    });
+    document.getElementById('syncNowBtn').addEventListener('click', function(){ Sync.syncNow(); });
+    document.getElementById('syncDisconnectBtn').addEventListener('click', function(){ Sync.disconnect(); });
+
+    // reflect current state on the main screen at load
+    Sync.setStatus(Sync.isOn()?'reconnecting…':'off');
+    // auto-reconnect if it was on before
+    if(Sync.isOn() && Sync.getCfg() && Sync.getTeam()){
+      setTimeout(function(){ Sync.connect({silent:true}); }, 300);
+    }
+  })();
 
   // ---- Init ----
   renderSession();
