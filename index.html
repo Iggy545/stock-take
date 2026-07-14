@@ -2852,6 +2852,76 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   let pendingScanBarcode = null;
   let activeTab = 'list'; // scanning behaves differently on the Sold tab
 
+  /* ---- Photo storage (IndexedDB) ----
+     Photos are far bigger than the rest of an item, and localStorage tops out
+     around 5MB. So the photo image data lives in IndexedDB (hundreds of MB to
+     GBs available) while the small item fields stay in localStorage. Photos
+     still travel with each item when syncing, and Save/Restore backup still
+     bundles them, so nothing else changes. If IndexedDB isn't usable (very old
+     browser or a locked-down private mode) we safely fall back to the old
+     localStorage behaviour so no photo is ever lost. */
+  var PhotoDB = (function(){
+    var DB='stockTakePhotos', STORE='photos', dbp=null;
+    function open(){
+      if(dbp) return dbp;
+      dbp = new Promise(function(res,rej){
+        try{
+          var r = indexedDB.open(DB, 1);
+          r.onupgradeneeded = function(){ try{ r.result.createObjectStore(STORE); }catch(e){} };
+          r.onsuccess = function(){ res(r.result); };
+          r.onerror   = function(){ rej(r.error); };
+        }catch(e){ rej(e); }
+      });
+      return dbp;
+    }
+    function store(mode){ return open().then(function(db){ return db.transaction(STORE, mode).objectStore(STORE); }); }
+    return {
+      supported:function(){ try{ return typeof indexedDB!=='undefined' && !!indexedDB; }catch(e){ return false; } },
+      get:function(k){ return store('readonly').then(function(st){ return new Promise(function(res){ var r=st.get(k); r.onsuccess=function(){res(r.result||null);}; r.onerror=function(){res(null);}; }); }); },
+      set:function(k,v){ return store('readwrite').then(function(st){ return new Promise(function(res,rej){ var r=st.put(v,k); r.onsuccess=function(){res(true);}; r.onerror=function(){rej(r.error);}; }); }); },
+      del:function(k){ return store('readwrite').then(function(st){ return new Promise(function(res){ var r=st.delete(k); r.onsuccess=function(){res(true);}; r.onerror=function(){res(false);}; }); }); },
+      keys:function(){ return store('readonly').then(function(st){ return new Promise(function(res){ var r=st.getAllKeys? st.getAllKeys() : null; if(!r){res([]);return;} r.onsuccess=function(){res(r.result||[]);}; r.onerror=function(){res([]);}; }); }); }
+    };
+  })();
+
+  var photoStoreOK = false;   // set true once IndexedDB is confirmed writable
+  var photoCache = {};        // barcode -> photo string currently held in IndexedDB
+  var photoBytes = 0;         // approx total size of photos, for the usage note
+  function _plen(s){ return s ? s.length : 0; }
+
+  // Mirror any changed photos into IndexedDB and drop removed ones.
+  function reconcilePhotos(){
+    if(!photoStoreOK) return;
+    Object.keys(items).forEach(function(bc){
+      var p = items[bc].photo || '';
+      if(photoCache[bc] !== p){
+        photoBytes += _plen(p) - _plen(photoCache[bc]||'');
+        if(p){ photoCache[bc]=p; PhotoDB.set(bc, p).catch(function(){}); }
+        else { delete photoCache[bc]; PhotoDB.del(bc).catch(function(){}); }
+      }
+    });
+    Object.keys(photoCache).forEach(function(bc){
+      if(items[bc]===undefined){
+        photoBytes -= _plen(photoCache[bc]||'');
+        delete photoCache[bc];
+        PhotoDB.del(bc).catch(function(){});
+      }
+    });
+  }
+
+  // A copy of items with photos removed, for localStorage (keeps it small).
+  function strippedForStorage(){
+    if(!photoStoreOK) return items;   // fallback: keep photos inline as before
+    var out={};
+    Object.keys(items).forEach(function(bc){
+      var it=items[bc], c={};
+      for(var k in it){ if(k!=='photo') c[k]=it[k]; }
+      if(it.photo) c.hasPhoto=1;      // remember a photo exists until it hydrates
+      out[bc]=c;
+    });
+    return out;
+  }
+
   function loadItems(){
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -2860,19 +2930,60 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   function saveItems(){
     try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      reconcilePhotos();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(strippedForStorage()));
       return true;
     }catch(e){
-      // Almost always the ~5MB storage quota, hit because of photos.
-      // Fail loudly — silently dropping the save would lose the person's data.
-      showToast('Storage full — remove some photos to free up space', 'error');
+      // With photos in IndexedDB this should be very rare now.
+      showToast('Storage full on this device', 'error');
       return false;
     }
   }
 
-  // Rough estimate of how much storage the photos are using
+  // Bring photos into IndexedDB and out of localStorage. Runs once at startup.
+  // Also migrates photos saved the old way, and hydrates photos back into memory.
+  async function initPhotos(){
+    try{
+      if(!PhotoDB.supported()) return;
+      // Confirm we can actually read & write before we rely on it.
+      try{ await PhotoDB.set('__probe__','1'); var pv=await PhotoDB.get('__probe__'); await PhotoDB.del('__probe__'); if(pv!=='1') return; }
+      catch(e){ return; }
+      photoStoreOK = true;
+
+      var keys = await PhotoDB.keys();
+      var have = {}; keys.forEach(function(k){ have[k]=1; });
+
+      // Pull stored photos into memory for items that don't have them loaded.
+      for(var i=0;i<keys.length;i++){
+        var bc = keys[i];
+        if(items[bc] && !items[bc].photo){
+          var p = await PhotoDB.get(bc);
+          if(p) items[bc].photo = p;
+        }
+      }
+      // Build the cache and migrate any inline (old-style) photos into IndexedDB.
+      photoCache={}; photoBytes=0;
+      var bcs = Object.keys(items);
+      for(var j=0;j<bcs.length;j++){
+        var b = bcs[j];
+        if(items[b] && items[b].photo){
+          photoCache[b] = items[b].photo;
+          photoBytes += _plen(items[b].photo);
+          if(!have[b]){ try{ await PhotoDB.set(b, items[b].photo); }catch(e){} }
+        }
+      }
+      // Re-save items (now stripped) and refresh the screen with photos in place.
+      saveItems();
+      renderList(document.getElementById('searchBox') ? document.getElementById('searchBox').value : '');
+      renderSold();
+    }catch(e){ /* leave photoStoreOK false -> old behaviour */ }
+    finally{ maybeAutoConnectSync(); }
+  }
+
+  // Rough estimate of how much space the photos are using.
   function storageUsedKb(){
     try{
+      if(photoStoreOK) return Math.round(photoBytes / 1024);
       const raw = localStorage.getItem(STORAGE_KEY) || '';
       return Math.round(raw.length / 1024);
     }catch(e){ return 0; }
@@ -2917,9 +3028,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const kb = storageUsedKb();
     const note = document.getElementById('storageNote');
     if(note){
-      const photos = Object.keys(items).filter(bc => items[bc].photo).length;
-      note.textContent = `${photos} photo${photos===1?'':'s'} · ${kb} KB of about 5000 KB used`;
-      note.className = kb > 4000 ? 'storage-note warn' : 'storage-note';
+      const photos = Object.keys(items).filter(bc => items[bc].photo || items[bc].hasPhoto).length;
+      if(photoStoreOK){
+        const mb = (kb/1024);
+        const size = mb >= 1 ? mb.toFixed(1)+' MB' : kb+' KB';
+        note.textContent = `${photos} photo${photos===1?'':'s'} · ${size} in photo store`;
+        note.className = 'storage-note';
+      } else {
+        note.textContent = `${photos} photo${photos===1?'':'s'} · ${kb} KB of about 5000 KB used`;
+        note.className = kb > 4000 ? 'storage-note warn' : 'storage-note';
+      }
     }
   }
   function showToast(msg, type){
@@ -4730,16 +4848,28 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     // reflect current state on the main screen at load
     Sync.setStatus(Sync.isOn()?'reconnecting…':'off');
-    // auto-reconnect if it was on before
-    if(Sync.isOn() && Sync.getCfg() && Sync.getTeam()){
-      setTimeout(function(){ Sync.connect({silent:true}); }, 300);
-    }
+    // NOTE: auto-reconnect now happens after photos are loaded (see initPhotos),
+    // so the first sync push includes photos rather than racing ahead of them.
   })();
+
+  // Auto-reconnect once photos are in memory, so the first push carries them.
+  var _autoConnectDone = false;
+  function maybeAutoConnectSync(){
+    if(_autoConnectDone) return; _autoConnectDone = true;
+    try{
+      if(Sync.isOn() && Sync.getCfg() && Sync.getTeam()){
+        Sync.connect({silent:true});
+      }
+    }catch(e){}
+  }
 
   // ---- Init ----
   renderSession();
   renderList();
   renderSold();
+  initPhotos();   // migrate/hydrate photos, then trigger sync auto-connect
+  // Safety net: if IndexedDB ever stalls, still bring sync up shortly after.
+  setTimeout(maybeAutoConnectSync, 4000);
 })();
 </script>
 </body>
