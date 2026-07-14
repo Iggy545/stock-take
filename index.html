@@ -396,6 +396,16 @@
       Status: not connected
     </div>
 
+    <label for="syncEmail">Your login email (given to you by the owner)</label>
+    <input type="email" id="syncEmail" placeholder="you@example.com" autocomplete="username" autocapitalize="none">
+
+    <label for="syncPassword">Password</label>
+    <input type="password" id="syncPassword" placeholder="your password" autocomplete="current-password">
+    <div style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">
+      Your password is never stored on the device — after the first sign-in this
+      device stays signed in, so you won't need to type it again.
+    </div>
+
     <label for="syncTeam">Team code (everyone must use the same one)</label>
     <input type="text" id="syncTeam" placeholder="e.g. shop-front-2026" autocomplete="off" autocapitalize="none">
 
@@ -4532,7 +4542,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   var Sync = (function(){
     var CFG_KEY='stockTakeSyncCfg', TEAM_KEY='stockTakeSyncTeam', PIN_KEY='stockTakeSyncPin',
-        TIMES_KEY='stockTakeSyncTimes', ON_KEY='stockTakeSyncOn', CID_KEY='stockTakeClientId';
+        TIMES_KEY='stockTakeSyncTimes', ON_KEY='stockTakeSyncOn', CID_KEY='stockTakeClientId',
+        EMAIL_KEY='stockTakeSyncEmail';
     var SDK_APP ='https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
     var SDK_FS  ='https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js';
     var SDK_AUTH='https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
@@ -4554,6 +4565,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     function getCfg(){ try{ var r=localStorage.getItem(CFG_KEY); return r?JSON.parse(r):null; }catch(e){ return null; } }
     function getTeam(){ try{ return localStorage.getItem(TEAM_KEY)||''; }catch(e){ return ''; } }
     function getPin(){ try{ return localStorage.getItem(PIN_KEY)||''; }catch(e){ return ''; } }
+    function getEmail(){ try{ return localStorage.getItem(EMAIL_KEY)||''; }catch(e){ return ''; } }
     function isOn(){ try{ return localStorage.getItem(ON_KEY)==='1'; }catch(e){ return false; } }
 
     // Stable id for a sale (the array has no ids of its own).
@@ -4745,10 +4757,32 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         await loadSDK();
         try{ app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg); }
         catch(e){ app = firebase.initializeApp(cfg); }
-        // Anonymous sign-in so Firestore rules can require an authenticated
-        // session (safer than leaving the database open to the whole internet).
-        try{ await firebase.auth(app).signInAnonymously(); }
-        catch(e){ throw new Error('Turn on Anonymous sign-in in Firebase (Authentication → Sign-in method).'); }
+        // Real email+password login. Firestore rules allow only the specific
+        // accounts the owner created, so access is genuinely closed — a stranger
+        // with the config or team code still can't get in.
+        var auth = firebase.auth(app);
+        try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
+        if(!auth.currentUser){
+          // Not signed in on this device yet: need email + password once.
+          var email = (opts.email || getEmail() || '').trim();
+          var pw    = opts.password || '';
+          if(!email || !pw){
+            connecting=false;
+            setStatus('sign in needed — open panel & enter password', 'err');
+            if(!opts.silent) showToast('Enter your email and password to sign in', 'error');
+            return;
+          }
+          try{ await auth.signInWithEmailAndPassword(email, pw); }
+          catch(e){
+            connecting=false;
+            var msg = (e && e.code === 'auth/invalid-credential') ? 'Wrong email or password'
+                    : (e && e.code === 'auth/operation-not-allowed') ? 'Turn on Email/Password sign-in in Firebase'
+                    : (e && e.message) || 'Sign-in failed';
+            setStatus(msg, 'err');
+            if(!opts.silent) showToast(msg, 'error');
+            return;
+          }
+        }
         db = firebase.firestore(app);
         try{ await db.enablePersistence({synchronizeTabs:true}); }catch(e){ /* multi-tab or unsupported: fine */ }
         var ws = db.collection('workspaces').doc(workspacePath());
@@ -4775,7 +4809,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       showToast('Team sync turned off', 'success');
     }
 
-    function saveSettings(cfgText, team, pin){
+    function saveSettings(cfgText, team, pin, email){
       var cfg;
       try{ cfg = JSON.parse(cfgText); }
       catch(e){
@@ -4785,10 +4819,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
       if(!cfg || !cfg.projectId || !cfg.apiKey) throw new Error('That Firebase config looks incomplete (need apiKey and projectId).');
       if(!team || !team.trim()) throw new Error('Please enter a team code.');
+      if(!email || !email.trim()) throw new Error('Please enter your login email.');
       try{
         localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
         localStorage.setItem(TEAM_KEY, team.trim());
         localStorage.setItem(PIN_KEY, (pin||'').trim());
+        localStorage.setItem(EMAIL_KEY, email.trim());   // email only — never the password
       }catch(e){ throw new Error('Could not save settings on this device.'); }
       return cfg;
     }
@@ -4804,7 +4840,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return {
       connect:connect, disconnect:disconnect, syncNow:syncNow,
       saveSettings:saveSettings, onLocalItems:onLocalItems, onLocalSales:onLocalSales,
-      setStatus:setStatus, isOn:isOn, getCfg:getCfg, getTeam:getTeam, getPin:getPin,
+      setStatus:setStatus, isOn:isOn, getCfg:getCfg, getTeam:getTeam, getPin:getPin, getEmail:getEmail,
       isConnected:function(){ return connected; }
     };
   })();
@@ -4817,6 +4853,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   (function wireSyncUI(){
     var modal=document.getElementById('syncModal');
     function openModal(){
+      document.getElementById('syncEmail').value = Sync.getEmail();
+      document.getElementById('syncPassword').value = '';   // never prefilled
       document.getElementById('syncTeam').value = Sync.getTeam();
       document.getElementById('syncPin').value  = Sync.getPin();
       var cfg=Sync.getCfg();
@@ -4833,15 +4871,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     document.getElementById('syncConnectBtn').addEventListener('click', function(){
       var note=document.getElementById('syncModalNote'); note.textContent='';
+      var email = document.getElementById('syncEmail').value;
+      var pw    = document.getElementById('syncPassword').value;
       try{
         Sync.saveSettings(
           document.getElementById('syncCfg').value,
           document.getElementById('syncTeam').value,
-          document.getElementById('syncPin').value
+          document.getElementById('syncPin').value,
+          email
         );
       }catch(err){ note.textContent = err.message; note.classList.add('warn'); return; }
       note.classList.remove('warn');
-      Sync.connect();
+      Sync.connect({ email: email, password: pw });
+      document.getElementById('syncPassword').value = '';   // clear after use
     });
     document.getElementById('syncNowBtn').addEventListener('click', function(){ Sync.syncNow(); });
     document.getElementById('syncDisconnectBtn').addEventListener('click', function(){ Sync.disconnect(); });
@@ -4858,7 +4900,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(_autoConnectDone) return; _autoConnectDone = true;
     try{
       if(Sync.isOn() && Sync.getCfg() && Sync.getTeam()){
-        Sync.connect({silent:true});
+        // No password here: relies on the sign-in Firebase kept from last time.
+        // If the session has gone, the status will ask for a password.
+        Sync.connect({silent:true, email: Sync.getEmail()});
       }
     }catch(e){}
   }
