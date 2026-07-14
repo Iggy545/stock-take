@@ -4612,31 +4612,38 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // ---- apply a remote item record to local (last-write-wins by time) ----
     function applyRemoteItem(bc, d){
       if(!d) return false;
+      // Use the record's real key stored in the doc, not the sanitized doc id,
+      // so our own writes are recognised (raw and sanitized keys can differ).
+      var key = (d && d.key) || bc;
       var ts = Number(d.updatedAt)||0;
-      var localTs = Number(times.items[bc])||0;
+      var localTs = Number(times.items[key])||0;
       if(d.by===clientId && ts<=localTs) return false;   // our own echo
       if(ts < localTs) return false;                     // local is newer, keep it
-      if(d.deleted){ if(items[bc]!==undefined){ delete items[bc]; } }
-      else { items[bc] = d.data; }
-      times.items[bc]=ts;
-      shadowItems[bc] = d.deleted ? undefined : serialize(d.data);
-      if(shadowItems[bc]===undefined) delete shadowItems[bc];
+      if(d.deleted){ if(items[key]!==undefined){ delete items[key]; } }
+      else { items[key] = d.data; }
+      times.items[key]=ts;
+      shadowItems[key] = d.deleted ? undefined : serialize(d.data);
+      if(shadowItems[key]===undefined) delete shadowItems[key];
       return true;
     }
     function applyRemoteSale(id, d){
       if(!d) return false;
-      var ts=Number(d.updatedAt)||0, localTs=Number(times.sales[id])||0;
+      // Match on the real key inside the doc, not the sanitized doc id — a sale's
+      // key contains a timestamp with '.', which sanitizing changes, so using the
+      // doc id here would fail the echo check and duplicate the sale.
+      var key = (d && d.key) || id;
+      var ts=Number(d.updatedAt)||0, localTs=Number(times.sales[key])||0;
       if(d.by===clientId && ts<=localTs) return false;
       if(ts < localTs) return false;
       var map={}; sales.forEach(function(s){ map[saleKey(s)]=s; });
-      if(d.deleted){ delete map[id]; }
-      else { map[id]=d.data; }
+      if(d.deleted){ delete map[key]; }
+      else { map[key]=d.data; }
       var arr=Object.keys(map).map(function(k){ return map[k]; });
       arr.sort(function(a,b){ return String(a.at||'').localeCompare(String(b.at||'')); });
       sales.length=0; Array.prototype.push.apply(sales, arr);
-      times.sales[id]=ts;
-      shadowSales[id] = d.deleted ? undefined : serialize(d.data);
-      if(shadowSales[id]===undefined) delete shadowSales[id];
+      times.sales[key]=ts;
+      shadowSales[key] = d.deleted ? undefined : serialize(d.data);
+      if(shadowSales[key]===undefined) delete shadowSales[key];
       return true;
     }
     function applyRemoteMeta(d){
@@ -4660,13 +4667,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         var ser=serialize(items[bc]);
         if(shadowItems[bc]!==ser){
           var ts=Date.now(); times.items[bc]=ts; shadowItems[bc]=ser;
-          writes.push(itemsCol.doc(docSafe(bc)).set({ data: items[bc], updatedAt: ts, by: clientId, deleted:false }));
+          writes.push(itemsCol.doc(docSafe(bc)).set({ data: items[bc], updatedAt: ts, by: clientId, deleted:false, key: bc }));
         }
       });
       Object.keys(shadowItems).forEach(function(bc){
         if(items[bc]===undefined){
           var ts=Date.now(); times.items[bc]=ts; delete shadowItems[bc];
-          writes.push(itemsCol.doc(docSafe(bc)).set({ updatedAt: ts, by: clientId, deleted:true }));
+          writes.push(itemsCol.doc(docSafe(bc)).set({ updatedAt: ts, by: clientId, deleted:true, key: bc }));
         }
       });
       if(writes.length){ saveTimes(); }
@@ -4679,13 +4686,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         var ser=serialize(cur[id]);
         if(shadowSales[id]!==ser){
           var ts=Date.now(); times.sales[id]=ts; shadowSales[id]=ser; writes++;
-          salesCol.doc(docSafe(id)).set({ data: cur[id], updatedAt: ts, by: clientId, deleted:false });
+          salesCol.doc(docSafe(id)).set({ data: cur[id], updatedAt: ts, by: clientId, deleted:false, key: id });
         }
       });
       Object.keys(shadowSales).forEach(function(id){
         if(!(id in cur)){
           var ts=Date.now(); times.sales[id]=ts; delete shadowSales[id]; writes++;
-          salesCol.doc(docSafe(id)).set({ updatedAt: ts, by: clientId, deleted:true });
+          salesCol.doc(docSafe(id)).set({ updatedAt: ts, by: clientId, deleted:true, key: id });
         }
       });
       if(writes) saveTimes();
