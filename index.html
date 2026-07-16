@@ -123,6 +123,16 @@
   .promo-actions button.pr-del{color:var(--danger);}
   #cartPromoRow{cursor:pointer;color:var(--moss-dark);}
 
+  /* New count folder picker */
+  .nc-row{
+    display:flex;align-items:center;gap:10px;
+    padding:10px 4px;border-bottom:1px solid var(--line);cursor:pointer;
+  }
+  .nc-row:last-child{border-bottom:none;}
+  .nc-row input[type=checkbox]{width:18px;height:18px;margin:0;flex:none;accent-color:var(--clay);}
+  .nc-name{flex:1;min-width:0;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .nc-count{font-size:11px;font-weight:700;color:var(--muted);background:var(--line);border-radius:8px;padding:3px 8px;flex:none;}
+
   .empty-state{
     text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;
   }
@@ -647,6 +657,24 @@
       <button class="btn btn-secondary" id="cancelNewItem">Cancel</button>
       <button class="btn btn-primary" id="saveNewItem">Save item</button>
     </div>
+  </div>
+</div>
+
+<!-- New count chooser: full stock take, or recount only chosen folders -->
+<div class="modal-overlay" id="newCountModal" style="display:none;">
+  <div class="modal">
+    <h2>New count</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      A full stock take resets every counted number to 0 and restarts the count date.
+      Or recount just part of the stock — only the folders you tick are reset,
+      everything else keeps its counted numbers and the date stays put.
+    </p>
+    <button class="btn btn-primary" id="ncFullBtn" style="width:100%;">Full stock take — reset everything</button>
+    <div class="quick-sell-head" style="margin-top:16px;">Or recount only these folders</div>
+    <div class="empty-state" id="ncEmpty" style="display:none;padding:14px;">No folders yet — use the Folder box when adding items.</div>
+    <div id="ncFolderList"></div>
+    <button class="btn btn-primary" id="ncPartialBtn" style="width:100%;margin-top:10px;">Reset ticked folders only</button>
+    <button class="btn btn-secondary" id="ncCancel" style="margin-top:8px;">Cancel</button>
   </div>
 </div>
 
@@ -5000,7 +5028,44 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- New session ----
-  document.getElementById('resetSessionBtn').addEventListener('click', () => {
+  // New count: either a full stock take, or recount only chosen folders
+  function ncItemsUnder(path){
+    // barcodes at or under a folder path ('' = items not in any folder)
+    return Object.keys(items).filter(bc => {
+      const f = itemFolder(items[bc]);
+      if(path === '') return f === '';
+      return f === path || f.indexOf(path + '/') === 0;
+    });
+  }
+  function openNewCountModal(){
+    const paths = allFolderPaths();
+    const loose = ncItemsUnder('').length;
+    const listEl = document.getElementById('ncFolderList');
+    const rows = [];
+    if(loose) rows.push({ path:'', label:'(Items not in any folder)', n:loose });
+    paths.forEach(p => {
+      const n = ncItemsUnder(p).length;
+      if(n) rows.push({ path:p, label:p, n:n });
+    });
+    document.getElementById('ncEmpty').style.display = rows.length ? 'none' : 'block';
+    document.getElementById('ncPartialBtn').style.display = rows.length ? 'block' : 'none';
+    listEl.innerHTML = rows.map((r,i) => `
+      <label class="nc-row">
+        <input type="checkbox" data-ncpath="${escapeAttr(r.path)}">
+        <span class="nc-name">${r.path ? '📁 ' : ''}${escapeHtml(r.label)}</span>
+        <span class="nc-count">${r.n}</span>
+      </label>`).join('');
+    document.getElementById('newCountModal').style.display = 'flex';
+  }
+  function closeNewCountModal(){ document.getElementById('newCountModal').style.display = 'none'; }
+  document.getElementById('resetSessionBtn').addEventListener('click', openNewCountModal);
+  document.getElementById('ncCancel').addEventListener('click', closeNewCountModal);
+  document.getElementById('newCountModal').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) closeNewCountModal();
+  });
+
+  document.getElementById('ncFullBtn').addEventListener('click', () => {
+    closeNewCountModal();
     askConfirm(
       'Start a new stock take?',
       'This resets all counted numbers back to 0. Your item list and expected quantities are kept.',
@@ -5013,6 +5078,29 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         renderSession();
         renderList(document.getElementById('searchBox').value);
         showToast('New stock take started', 'success');
+      }
+    );
+  });
+
+  document.getElementById('ncPartialBtn').addEventListener('click', () => {
+    const picked = Array.from(document.querySelectorAll('#ncFolderList input:checked'))
+                        .map(cb => cb.dataset.ncpath);
+    if(!picked.length){ showToast('Tick at least one folder first', 'error'); return; }
+    // De-duplicate: a barcode under two ticked paths only resets once
+    const set = {};
+    picked.forEach(p => ncItemsUnder(p).forEach(bc => set[bc] = 1));
+    const bcs = Object.keys(set);
+    const names = picked.map(p => p === '' ? 'no folder' : p).join(', ');
+    closeNewCountModal();
+    askConfirm(
+      'Recount ' + (picked.length === 1 ? 'this folder?' : 'these folders?'),
+      bcs.length + ' item' + (bcs.length===1?'':'s') + ' in ' + names + ' will go back to counted 0. Everything else keeps its counts, and the count date stays the same.',
+      'Reset ' + bcs.length + ' item' + (bcs.length===1?'':'s'),
+      () => {
+        bcs.forEach(bc => items[bc].counted = 0);
+        saveItems();
+        renderList(document.getElementById('searchBox').value);
+        showToast('Counts reset — happy recounting', 'success');
       }
     );
   });
