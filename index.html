@@ -435,6 +435,7 @@
   </div>
   <div class="session-bar">
     <span>Stock take started <strong id="sessionDate">—</strong></span>
+    <button id="staffBtn" style="display:none;">👤 —</button>
     <button id="resetSessionBtn">New count</button>
   </div>
 </header>
@@ -583,6 +584,15 @@
       <div class="storage-note" id="storageNote"></div>
     </div>
     <div class="card">
+      <div class="quick-sell-head">Staff</div>
+      <div id="staffList"></div>
+      <div class="barcode-generate-row" style="margin-top:8px;">
+        <input type="text" id="staffNameInput" placeholder="e.g. Kay" autocomplete="off">
+        <button class="btn-generate" id="staffAddBtn" style="margin-bottom:0;">＋ Add</button>
+      </div>
+      <div class="folder-hint" style="margin-top:8px;">Whoever is picked on the till gets their name recorded on every sale they ring up.</div>
+    </div>
+    <div class="card">
       <div class="quick-sell-head">Danger zone</div>
       <button class="btn btn-danger" id="clearAllBtn" style="width:100%;">Reset everything</button>
     </div>
@@ -706,6 +716,19 @@
     <div id="ncFolderList"></div>
     <button class="btn btn-primary" id="ncPartialBtn" style="width:100%;margin-top:10px;">Reset ticked folders only</button>
     <button class="btn btn-secondary" id="ncCancel" style="margin-top:8px;">Cancel</button>
+  </div>
+</div>
+
+<!-- Staff picker: who is using the till right now -->
+<div class="modal-overlay" id="staffModal" style="display:none;">
+  <div class="modal">
+    <h2>👤 Who's on the till?</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      Sales are recorded under whoever is picked here. Change it any time by
+      tapping the name at the top of the screen.
+    </p>
+    <div id="staffPickList"></div>
+    <button class="btn btn-secondary" id="staffModalClose">Close</button>
   </div>
 </div>
 
@@ -4085,6 +4108,88 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
+  // ---- Staff (who's on the till) ----
+  // Names only — this is attribution, not security. The staff list lives on
+  // this device; the name stamped on each sale travels through sync/backups.
+  const STAFF_KEY = 'stockTakeStaff';
+  const STAFF_CUR_KEY = 'stockTakeStaffCurrent';
+  let staff = [];
+  try{ staff = JSON.parse(localStorage.getItem(STAFF_KEY)) || []; }catch(e){ staff = []; }
+  function saveStaff(){ try{ localStorage.setItem(STAFF_KEY, JSON.stringify(staff)); }catch(e){} }
+  function currentStaff(){
+    try{
+      const c = localStorage.getItem(STAFF_CUR_KEY) || '';
+      return staff.indexOf(c) >= 0 ? c : '';
+    }catch(e){ return ''; }
+  }
+  function setCurrentStaff(name){
+    try{ localStorage.setItem(STAFF_CUR_KEY, name); }catch(e){}
+    renderStaffUi();
+  }
+  function renderStaffUi(){
+    const btn = document.getElementById('staffBtn');
+    const cur = currentStaff();
+    if(staff.length){
+      btn.style.display = '';
+      btn.textContent = '👤 ' + (cur || "Who's on?");
+    } else {
+      btn.style.display = 'none';
+    }
+    const listEl = document.getElementById('staffList');
+    listEl.innerHTML = staff.length ? staff.map(n => `
+      <div class="promo-row">
+        <div class="promo-code" style="flex:1;min-width:0;">${escapeHtml(n)}${n===cur ? ' <span style="font-size:11px;color:var(--moss-dark);">— on the till</span>' : ''}</div>
+        <div class="promo-actions"><button type="button" class="pr-del" data-staffdel="${escapeAttr(n)}">✕</button></div>
+      </div>`).join('')
+      : '<div class="empty-state" style="padding:14px;">No staff yet — sales are not attributed to anyone.</div>';
+    listEl.querySelectorAll('[data-staffdel]').forEach(b => b.addEventListener('click', () => {
+      const n = b.dataset.staffdel;
+      askConfirm('Remove ' + n + '?', 'Past sales keep the name — it just stops being offered on the till.', 'Remove', () => {
+        staff = staff.filter(x => x !== n);
+        saveStaff();
+        renderStaffUi();
+        showToast(n + ' removed', 'success');
+      });
+    }));
+  }
+  function openStaffModal(){
+    if(!staff.length) return;
+    const listEl = document.getElementById('staffPickList');
+    const cur = currentStaff();
+    listEl.innerHTML = staff.map(n => `
+      <button type="button" class="btn ${n===cur ? 'btn-primary' : 'btn-secondary'}" style="width:100%;margin-bottom:8px;" data-staffpick="${escapeAttr(n)}">${n===cur ? '✓ ' : ''}${escapeHtml(n)}</button>`).join('');
+    listEl.querySelectorAll('[data-staffpick]').forEach(b => b.addEventListener('click', () => {
+      setCurrentStaff(b.dataset.staffpick);
+      document.getElementById('staffModal').style.display = 'none';
+      showToast(b.dataset.staffpick + ' is on the till', 'success');
+    }));
+    document.getElementById('staffModal').style.display = 'flex';
+  }
+  document.getElementById('staffBtn').addEventListener('click', openStaffModal);
+  document.getElementById('staffModalClose').addEventListener('click', () => {
+    document.getElementById('staffModal').style.display = 'none';
+  });
+  document.getElementById('staffModal').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+  document.getElementById('staffAddBtn').addEventListener('click', () => {
+    const n = document.getElementById('staffNameInput').value.trim();
+    if(!n){ showToast('Type a name first', 'error'); return; }
+    if(staff.indexOf(n) >= 0){ showToast(n + ' is already on the list', 'error'); return; }
+    staff.push(n);
+    saveStaff();
+    document.getElementById('staffNameInput').value = '';
+    if(staff.length === 1) setCurrentStaff(n);   // first person added is on the till
+    renderStaffUi();
+    showToast(n + ' added', 'success');
+  });
+  document.getElementById('staffNameInput').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') document.getElementById('staffAddBtn').click();
+  });
+  renderStaffUi();
+  // Opening the app with staff set up but nobody picked? Ask straight away.
+  if(staff.length && !currentStaff()) setTimeout(openStaffModal, 600);
+
   // ---- Promo codes ----
   // Shareable discount codes for the till: percent off, £ off, or 2-for-1
   // (every second unit of the same item is free). A code applied to a basket
@@ -4463,6 +4568,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         kind: 'sale',
         refundOfLine: null,
         promo: (cart.promo && f.promoDisc>0) ? cart.promo.code : null,
+        staff: currentStaff() || null,
         at: at
       });
     });
@@ -4540,6 +4646,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     h += `<div class="r-line r-total"><span class="r-l">${isRefund?'Refunded':'Total'}</span><span>${money(total)}</span></div>`;
     const payNames = { cash:'Cash', card:'Card', other:'Other' };
     if(g.pay) h += `<div class="r-line"><span class="r-l">Paid by</span><span>${payNames[g.pay]||g.pay}</span></div>`;
+    const servedBy = (g.lines.find(l => l.staff)||{}).staff;
+    if(servedBy) h += `<div class="r-line"><span class="r-l">Served by</span><span>${escapeHtml(servedBy)}</span></div>`;
     if(g.tendered!=null){
       h += `<div class="r-line"><span class="r-l">Cash</span><span>${money(g.tendered)}</span></div>`;
       h += `<div class="r-line"><span class="r-l">Change</span><span>${money(g.change||0)}</span></div>`;
@@ -4699,6 +4807,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         change: null,
         kind: 'refund',
         refundOfLine: r.line.id || null,
+        staff: currentStaff() || null,
         at: at
       });
     });
@@ -4978,7 +5087,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   document.getElementById('exportSalesBtn').addEventListener('click', () => {
     if(sales.length === 0){ showToast('No sales to export', 'error'); return; }
-    let csv = 'Date,Time,Receipt,Type,Barcode,Item,Made By,Unit Price,Qty,Discount,Net,Payment\n';
+    let csv = 'Date,Time,Receipt,Type,Barcode,Item,Made By,Unit Price,Qty,Discount,Net,Payment,Staff\n';
     let total = 0;
     sales.forEach(s => {
       const d = new Date(s.at);
@@ -5000,7 +5109,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         q,
         (Number(s.disc)||0).toFixed(2),
         net.toFixed(2),
-        s.pay || ''
+        s.pay || '',
+        s.staff || ''
       ];
       csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
     });
