@@ -123,6 +123,17 @@
   .promo-actions button.pr-del{color:var(--danger);}
   #cartPromoRow{cursor:pointer;color:var(--moss-dark);}
 
+  /* Weekly CSV export reminder */
+  .export-banner{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel);border:1px solid var(--clay);border-radius:12px;
+    padding:10px 12px;margin-bottom:12px;font-size:13px;font-weight:600;
+  }
+  .export-banner span{flex:1;min-width:0;}
+  .export-banner button{border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
+  #exportBannerGo{background:var(--clay);color:#fff;}
+  #exportBannerClose{background:none;color:var(--muted);font-size:15px;padding:8px 6px;}
+
   /* New count folder picker */
   .nc-row{
     display:flex;align-items:center;gap:10px;
@@ -429,11 +440,17 @@
 </header>
 
 <main>
+  <div class="export-banner" id="exportBanner" style="display:none;">
+    <span>📤 Weekly stock export is due</span>
+    <button id="exportBannerGo" type="button">Download CSV</button>
+    <button id="exportBannerClose" type="button" aria-label="Not now">✕</button>
+  </div>
   <div class="tabs">
     <div class="tab active" data-tab="list"><span class="tab-ic">📦</span>Stock</div>
     <div class="tab" data-tab="till"><span class="tab-ic">🛒</span>Till</div>
     <div class="tab" data-tab="sold"><span class="tab-ic">🧾</span>Sales</div>
     <div class="tab" data-tab="add"><span class="tab-ic">➕</span>Add</div>
+    <div class="tab" data-tab="settings"><span class="tab-ic">⚙️</span>Settings</div>
   </div>
 
   <div id="tab-list">
@@ -456,20 +473,6 @@
       </div>
       <div id="itemList"></div>
     </div>
-    <div class="btn-row" style="margin-top:8px;">
-      <button class="btn btn-secondary" id="exportBtn">⤓ Export CSV</button>
-      <button class="btn btn-danger" id="clearAllBtn">Reset everything</button>
-    </div>
-    <div class="btn-row" style="margin-top:8px;">
-      <button class="btn btn-secondary" id="backupBtn">💾 Save backup</button>
-      <button class="btn btn-secondary" id="restoreBtn">📂 Restore backup</button>
-    </div>
-    <input type="file" id="restoreInput" accept="application/json,.json" style="display:none;">
-    <div class="btn-row" style="margin-top:8px;">
-      <button class="btn btn-secondary" id="syncBtn">☁ Team sync</button>
-    </div>
-    <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
-    <div class="storage-note" id="storageNote"></div>
   </div>
 
   <div id="tab-till" style="display:none;">
@@ -561,6 +564,28 @@
       <button class="btn btn-secondary" id="undoSaleBtn">↩ Undo last sale</button>
     </div>
     <button class="btn btn-danger" id="clearSalesBtn" style="margin-top:8px;">Clear sales history</button>
+  </div>
+
+  <div id="tab-settings" style="display:none;">
+    <div class="card">
+      <div class="quick-sell-head">Your data</div>
+      <button class="btn btn-secondary" id="exportBtn" style="width:100%;">⤓ Export CSV</button>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-secondary" id="backupBtn">💾 Save backup</button>
+        <button class="btn btn-secondary" id="restoreBtn">📂 Restore backup</button>
+      </div>
+      <input type="file" id="restoreInput" accept="application/json,.json" style="display:none;">
+    </div>
+    <div class="card">
+      <div class="quick-sell-head">Team sync</div>
+      <button class="btn btn-secondary" id="syncBtn" style="width:100%;">☁ Team sync</button>
+      <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
+      <div class="storage-note" id="storageNote"></div>
+    </div>
+    <div class="card">
+      <div class="quick-sell-head">Danger zone</div>
+      <button class="btn btn-danger" id="clearAllBtn" style="width:100%;">Reset everything</button>
+    </div>
   </div>
 
 </main>
@@ -5005,6 +5030,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       document.getElementById('tab-till').style.display = target==='till' ? 'block':'none';
       document.getElementById('tab-sold').style.display = target==='sold' ? 'block':'none';
       document.getElementById('tab-add').style.display  = target==='add'  ? 'block':'none';
+      document.getElementById('tab-settings').style.display = target==='settings' ? 'block':'none';
 
       // The scan button does different things depending on where you are,
       // so it says which one it's about to do.
@@ -5886,7 +5912,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- Export CSV ----
-  document.getElementById('exportBtn').addEventListener('click', () => {
+  // One export routine shared by the button and the weekly reminder banner
+  const EXPORT_STAMP_KEY  = 'stockTakeLastCsvExport';
+  const EXPORT_SNOOZE_KEY = 'stockTakeCsvSnooze';
+  function exportStockCsv(){
     const barcodes = Object.keys(items);
     if(barcodes.length === 0){ showToast('No items to export', 'error'); return; }
     let csv = 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added\n';
@@ -5915,7 +5944,39 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast('CSV exported', 'success');
+    try{ localStorage.setItem(EXPORT_STAMP_KEY, new Date().toISOString()); }catch(e){}
+    refreshExportBanner();
+  }
+  document.getElementById('exportBtn').addEventListener('click', exportStockCsv);
+
+  // Weekly reminder: shows once the last export is over 7 days old.
+  // Dismissing snoozes it until tomorrow. First ever run starts the clock
+  // quietly instead of nagging straight away.
+  function refreshExportBanner(){
+    const el = document.getElementById('exportBanner');
+    if(!el) return;
+    let due = false;
+    try{
+      if(Object.keys(items).length){
+        const WEEK = 7*24*60*60*1000;
+        const last   = Date.parse(localStorage.getItem(EXPORT_STAMP_KEY)||'') || 0;
+        const snooze = Date.parse(localStorage.getItem(EXPORT_SNOOZE_KEY)||'') || 0;
+        if(!last){
+          localStorage.setItem(EXPORT_STAMP_KEY, new Date().toISOString());
+        } else if(Date.now() - last > WEEK && Date.now() > snooze){
+          due = true;
+        }
+      }
+    }catch(e){}
+    el.style.display = due ? 'flex' : 'none';
+  }
+  document.getElementById('exportBannerGo').addEventListener('click', exportStockCsv);
+  document.getElementById('exportBannerClose').addEventListener('click', () => {
+    try{ localStorage.setItem(EXPORT_SNOOZE_KEY, new Date(Date.now()+24*60*60*1000).toISOString()); }catch(e){}
+    document.getElementById('exportBanner').style.display = 'none';
+    showToast("Okay — I'll remind you tomorrow", 'success');
   });
+  refreshExportBanner();
 
   // ---- Backup / restore ----
   // A complete snapshot: stock, photos, sales and the QR numbering. This is the
