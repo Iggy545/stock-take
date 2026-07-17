@@ -203,7 +203,33 @@
   .toast.success{background:var(--moss-dark);}
   .toast.error{background:var(--danger);}
 
-  .search-row{margin-bottom:12px;}
+  .search-row{margin-bottom:12px;display:flex;gap:8px;}
+  .search-row input{flex:1;margin-bottom:0;}
+  .search-row button{
+    flex:none;width:auto;padding:0 14px;border-radius:12px;border:1px solid var(--line);
+    background:var(--panel);font-size:16px;cursor:pointer;
+  }
+  .search-row button.sel{background:var(--clay);border-color:var(--clay);color:#fff;}
+
+  /* Bulk select */
+  .bulk-bar{
+    display:flex;align-items:center;gap:8px;
+    background:var(--panel);border:1px solid var(--clay);border-radius:12px;
+    padding:8px 10px;margin-bottom:8px;font-size:13px;font-weight:600;
+  }
+  .bulk-bar span{flex:1;min-width:0;}
+  .bulk-bar button{
+    border:1px solid var(--line);background:var(--panel);border-radius:8px;
+    padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;
+  }
+  .bulk-bar .bulk-primary{background:var(--clay);color:#fff;border-color:var(--clay);}
+  .pick{
+    width:22px;height:22px;border-radius:50%;border:2px solid var(--line);
+    flex:none;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#fff;
+  }
+  .item-row.picked .pick{background:var(--clay);border-color:var(--clay);}
+  .item-row.picked{background:rgba(14,165,233,.07);}
   .icon{font-size:18px;line-height:1;}
 
   .value-summary{
@@ -457,6 +483,13 @@
   <div id="tab-list">
     <div class="search-row">
       <input type="text" id="searchBox" placeholder="Search by name or code…">
+      <button type="button" id="selectModeBtn" title="Select multiple items">☑</button>
+    </div>
+    <div class="bulk-bar" id="bulkBar" style="display:none;">
+      <span id="bulkCount">0 selected</span>
+      <button type="button" id="bulkAllBtn">All</button>
+      <button type="button" id="bulkEditBtn" class="bulk-primary">✏ Edit</button>
+      <button type="button" id="bulkDoneBtn">Done</button>
     </div>
     <div class="value-summary" id="valueSummary">
       <div>
@@ -576,6 +609,8 @@
         <button class="btn btn-secondary" id="restoreBtn">📂 Restore backup</button>
       </div>
       <input type="file" id="restoreInput" accept="application/json,.json" style="display:none;">
+      <button class="btn btn-secondary" id="importItemsBtn" style="width:100%;margin-top:8px;">⤒ Import items (JSON)</button>
+      <input type="file" id="importItemsInput" accept="application/json,.json" style="display:none;">
     </div>
     <div class="card">
       <div class="quick-sell-head">Team sync</div>
@@ -716,6 +751,26 @@
     <div id="ncFolderList"></div>
     <button class="btn btn-primary" id="ncPartialBtn" style="width:100%;margin-top:10px;">Reset ticked folders only</button>
     <button class="btn btn-secondary" id="ncCancel" style="margin-top:8px;">Cancel</button>
+  </div>
+</div>
+
+<!-- Bulk edit: change folder / made-by on many items at once -->
+<div class="modal-overlay" id="bulkEditModal" style="display:none;">
+  <div class="modal">
+    <h2 id="bulkEditTitle">Edit items</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      Only the boxes you fill in are changed — everything else on the items stays as it is.
+    </p>
+    <label>Move to folder</label>
+    <input type="text" id="bulkFolderInput" list="folderOptions" placeholder="Leave blank to keep current" autocomplete="off">
+    <div class="folder-hint">Use / for a subfolder, e.g. Kay/Bracelets. Type just / to move items out of every folder.</div>
+    <label>Made by</label>
+    <input type="text" id="bulkMakerInput" placeholder="Leave blank to keep current" autocomplete="off">
+    <div class="folder-hint">Type just - to clear the made-by name.</div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="bulkEditCancel">Cancel</button>
+      <button class="btn btn-primary" id="bulkEditApply">Apply</button>
+    </div>
   </div>
 </div>
 
@@ -3553,6 +3608,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
 
     refreshFolderOptions();
+    lastFiltered = filtered;
 
     if(barcodes.length === 0){
       emptyEl.style.display = 'block';
@@ -3587,9 +3643,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const folderTag = (q && itemFolder(it))
         ? ` · 📁 ${escapeHtml(itemFolder(it))}` : '';
 
+      const picked = selectMode && bulkPicked[bc];
       return `
-        <div class="item-row" data-barcode="${bc}">
+        <div class="item-row ${picked ? 'picked' : ''}" data-barcode="${bc}">
           <div class="row-main">
+            ${selectMode ? `<span class="pick">${picked ? '✓' : ''}</span>` : ''}
             ${thumbHtml(it)}
             <div style="min-width:0;">
               <div class="item-name">${escapeHtml(it.name)}</div>
@@ -3616,7 +3674,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
 
     listEl.querySelectorAll('.item-row').forEach(row => {
-      row.addEventListener('click', () => openEditModal(row.dataset.barcode));
+      row.addEventListener('click', () => {
+        if(selectMode) toggleBulkPick(row.dataset.barcode, row);
+        else openEditModal(row.dataset.barcode);
+      });
     });
   }
 
@@ -4107,6 +4168,73 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       });
     });
   }
+
+  // ---- Bulk select (Stock tab) ----
+  // Tap ☑ next to the search box, tap items to tick them, then Edit to move
+  // them all to a folder and/or set who made them in one go.
+  let selectMode = false;
+  let bulkPicked = {};
+  let lastFiltered = [];
+  function refreshBulkBar(){
+    const n = Object.keys(bulkPicked).length;
+    document.getElementById('bulkBar').style.display = selectMode ? 'flex' : 'none';
+    document.getElementById('bulkCount').textContent = n + ' selected';
+    document.getElementById('selectModeBtn').classList.toggle('sel', selectMode);
+  }
+  function setSelectMode(on){
+    selectMode = on;
+    if(!on) bulkPicked = {};
+    refreshBulkBar();
+    renderList(document.getElementById('searchBox').value);
+  }
+  function toggleBulkPick(bc, row){
+    if(bulkPicked[bc]) delete bulkPicked[bc]; else bulkPicked[bc] = 1;
+    if(row){
+      row.classList.toggle('picked', !!bulkPicked[bc]);
+      const p = row.querySelector('.pick');
+      if(p) p.textContent = bulkPicked[bc] ? '✓' : '';
+    }
+    refreshBulkBar();
+  }
+  document.getElementById('selectModeBtn').addEventListener('click', () => setSelectMode(!selectMode));
+  document.getElementById('bulkDoneBtn').addEventListener('click', () => setSelectMode(false));
+  document.getElementById('bulkAllBtn').addEventListener('click', () => {
+    // tick everything currently shown; if everything is ticked, untick all
+    const all = lastFiltered.length && lastFiltered.every(bc => bulkPicked[bc]);
+    bulkPicked = {};
+    if(!all) lastFiltered.forEach(bc => bulkPicked[bc] = 1);
+    refreshBulkBar();
+    renderList(document.getElementById('searchBox').value);
+  });
+  document.getElementById('bulkEditBtn').addEventListener('click', () => {
+    const n = Object.keys(bulkPicked).length;
+    if(!n){ showToast('Tap some items first to tick them', 'error'); return; }
+    document.getElementById('bulkEditTitle').textContent = 'Edit ' + n + ' item' + (n===1?'':'s');
+    document.getElementById('bulkFolderInput').value = '';
+    document.getElementById('bulkMakerInput').value = '';
+    document.getElementById('bulkEditModal').style.display = 'flex';
+  });
+  document.getElementById('bulkEditCancel').addEventListener('click', () => {
+    document.getElementById('bulkEditModal').style.display = 'none';
+  });
+  document.getElementById('bulkEditModal').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+  document.getElementById('bulkEditApply').addEventListener('click', () => {
+    const f = document.getElementById('bulkFolderInput').value.trim();
+    const m = document.getElementById('bulkMakerInput').value.trim();
+    if(!f && !m){ showToast('Fill in a folder or a made-by first', 'error'); return; }
+    const bcs = Object.keys(bulkPicked);
+    bcs.forEach(bc => {
+      if(!items[bc]) return;
+      if(f) items[bc].folder = (f === '/') ? '' : normFolder(f);
+      if(m) items[bc].maker = (m === '-') ? '' : m;
+    });
+    if(!saveItems()) return;
+    document.getElementById('bulkEditModal').style.display = 'none';
+    setSelectMode(false);
+    showToast(bcs.length + ' item' + (bcs.length===1?'':'s') + ' updated', 'success');
+  });
 
   // ---- Staff (who's on the till) ----
   // Names only — this is attribution, not security. The staff list lives on
@@ -6092,6 +6220,50 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // A complete snapshot: stock, photos, sales and the QR numbering. This is the
   // ONLY way the data leaves this device — the app file itself carries no data.
   // Use it to move to a new phone, or to hand the list over to someone else.
+  // ---- Import items ----
+  // Merges items from a JSON file into the stock list. Barcodes that already
+  // exist are left untouched — only new ones are added, so it is safe to run
+  // the same file twice. Accepts {items:{...}} or a plain {barcode:{...}} map.
+  document.getElementById('importItemsBtn').addEventListener('click', () => {
+    document.getElementById('importItemsInput').click();
+  });
+  document.getElementById('importItemsInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try{ data = JSON.parse(reader.result); }catch(err){ showToast('That file is not valid JSON', 'error'); return; }
+      const src = (data && data.items && typeof data.items === 'object') ? data.items : data;
+      if(!src || typeof src !== 'object' || Array.isArray(src)){ showToast('No items found in that file', 'error'); return; }
+      let added = 0, skipped = 0, bad = 0;
+      Object.keys(src).forEach(bc => {
+        const raw = src[bc];
+        if(!raw || typeof raw !== 'object' || !raw.name){ bad++; return; }
+        if(items[bc]){ skipped++; return; }
+        items[bc] = {
+          name: String(raw.name),
+          qty: parseInt(raw.qty,10) || 0,
+          maker: String(raw.maker||''),
+          price: Number(raw.price) || 0,
+          folder: normFolder(raw.folder),
+          photo: (typeof raw.photo === 'string') ? raw.photo : '',
+          counted: parseInt(raw.counted,10) || 0,
+          addedAt: new Date().toISOString()
+        };
+        added++;
+      });
+      if(added && !saveItems()) return;
+      renderList(document.getElementById('searchBox').value);
+      let msg = added + ' item' + (added===1?'':'s') + ' imported';
+      if(skipped) msg += ', ' + skipped + ' already existed';
+      if(bad) msg += ', ' + bad + ' unreadable';
+      showToast(msg, added ? 'success' : 'error');
+    };
+    reader.readAsText(file);
+  });
+
   const BACKUP_VERSION = 1;
 
   // On phones (iOS Safari, Chrome/Android) navigator.share can hand a file
