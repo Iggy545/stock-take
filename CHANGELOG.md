@@ -9,6 +9,21 @@ fixes.
 
 ---
 
+## v1.1.0 — 17 August 2026
+
+### Added
+- **Delete all selected, on the Stock tab.** Tick items with ☑ (or tap **All**), then the
+  new **🗑 Delete** button removes the whole selection in one go. The confirmation names
+  the first few items and how many others there are, so a mis-tap on **All** is obvious
+  before anything goes. Sales already recorded are not affected.
+
+### Fixed
+- **The "Delete this item?" confirmation appeared behind the edit form.** It was there all
+  along but hidden underneath, so the edit box had to be dismissed before the question
+  could be answered. Confirmation boxes now always sit in front.
+
+---
+
 ## v1.0.1 — 17 August 2026
 
 Two team-sync fixes. Both were written on 3 August but had never been published — they
