@@ -9,6 +9,25 @@ fixes.
 
 ---
 
+## v1.2.1 — 17 August 2026
+
+### Changed
+- **Generated codes are now three digits with a moving letter: `KA-001`.** Published a few
+  minutes after v1.2.0, which used four digits, so `KA-0001` becomes `KA-001`. Shorter to
+  read off a label and quicker to type in if a camera is playing up.
+- **After `KA-999` the letter moves on.** The next code is `KB-001`, then `KB-999` gives
+  `KC-001`, and so on. That is 999 items per letter and 25,974 to `KZ-999`; past that it
+  carries on `KAA-001`, `KAB-001`, so it cannot run out however far the shop grows.
+
+### Notes
+- If a code was generated on the v1.2.0 build in the meantime, the item keeps the `KA-0001`
+  it was labelled with, and the app knows not to hand out `KA-001` to anything else. The
+  numbering just carries on from there.
+- All the duplicate protection from v1.2.0 still applies, now counting a four-digit
+  `KA-0001` and a three-digit `KA-001` as the same number.
+
+---
+
 ## v1.2.0 — 17 August 2026
 
 ### Changed

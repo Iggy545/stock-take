@@ -878,7 +878,7 @@
   <div class="modal">
     <h2>Type the code</h2>
     <p class="hint" style="margin:6px 0 12px;">Enter the code printed under the QR square.</p>
-    <input type="text" id="manualCodeInput" placeholder="e.g. KA-0001" autocomplete="off">
+    <input type="text" id="manualCodeInput" placeholder="e.g. KA-001" autocomplete="off">
     <div class="btn-row" style="margin-top:8px;">
       <button class="btn btn-secondary" id="manualCodeCancel">Cancel</button>
       <button class="btn btn-primary" id="manualCodeOk">Enter</button>
@@ -3376,7 +3376,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.2.0';
+  const APP_VERSION = '1.2.1';
   const BUILD_DATE  = '17 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
@@ -5424,27 +5424,58 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- Barcode generation ----
-  // Codes read as KA-0001, KA-0002 ... The counter is its own storage key
-  // rather than the old 'stockTakeBarcodeSeq', which was seeded at 1000 to
-  // feed the previous SA00001001 format. Starting a new key means the KA run
-  // begins at 0001 instead of inheriting that seed, and an older build on
-  // another device carries on with its own counter untouched.
+  // Codes read as KA-001 ... KA-999, then the letter moves on: KB-001, KC-001,
+  // and so on. That is 999 per block and 26 blocks to KZ-999 — 25,974 items —
+  // and rather than hit a wall there it carries on KAA-001, KAB-001, so it
+  // cannot run out. Short enough to read off a label and type in by hand.
+  //
+  // Every generated code begins with K, which none of the shop's hand-assigned
+  // codes do (JW-, CR-, CG-, WC-, SO-, IC-, SG-, EB-, SA…). That is what lets
+  // the duplicate check below recognise its own codes and leave the rest alone.
+  //
+  // The counter is its own storage key rather than the old 'stockTakeBarcodeSeq',
+  // which was seeded at 1000 to feed the previous SA00001001 format. A separate
+  // key means this run starts at 001 instead of inheriting that seed, and an
+  // older build on another device carries on with its own counter untouched.
   const SEQ_KEY = 'stockTakeCodeSeq';
-  const CODE_PREFIX = 'KA-';
+  const BLOCK_SIZE = 999;                  // numbers in one letter block
+  const OURS_RE = /^K([A-Z]+)-0*(\d+)$/;   // a code this generator could have made
 
-  function formatCode(n){ return CODE_PREFIX + String(n).padStart(4, '0'); }
+  // 1 → 'A', 26 → 'Z', 27 → 'AA': spreadsheet column lettering, so the blocks
+  // keep going past KZ instead of stopping.
+  function blockLetters(i){
+    let s = '';
+    while(i > 0){
+      s = String.fromCharCode(65 + ((i - 1) % 26)) + s;
+      i = Math.floor((i - 1) / 26);
+    }
+    return s;
+  }
+  function blockFromLetters(s){
+    let n = 0;
+    for(let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+    return n;
+  }
 
-  // Highest KA number already used by an item in the stock list.
-  function highestUsedCodeNumber(){
-    let hi = 0;
+  function formatCode(n){
+    const block = Math.floor((n - 1) / BLOCK_SIZE);
+    const num   = ((n - 1) % BLOCK_SIZE) + 1;
+    return 'K' + blockLetters(block + 1) + '-' + String(num).padStart(3, '0');
+  }
+
+  // Positions in the sequence already taken by an item in the stock list, read
+  // regardless of how the number was padded — so a KA-0001 from the earlier
+  // build rules out KA-001 too.
+  function usedCodeNumbers(){
+    const used = {};
     Object.keys(items).forEach(k => {
-      const m = /^KA-(\d+)$/.exec(k);
-      if(m){
-        const n = parseInt(m[1], 10);
-        if(n > hi) hi = n;
-      }
+      const m = OURS_RE.exec(k);
+      if(!m) return;
+      const num = parseInt(m[2], 10);
+      if(num < 1 || num > BLOCK_SIZE) return;
+      used[(blockFromLetters(m[1]) - 1) * BLOCK_SIZE + num] = 1;
     });
-    return hi;
+    return used;
   }
 
   function nextGeneratedCode(){
@@ -5454,9 +5485,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // behind it — a restored backup, or another till that generated codes while
     // offline — and re-issuing a code an existing item already has would fold
     // two different items into one record.
-    seq = Math.max(seq, highestUsedCodeNumber());
+    const used = usedCodeNumbers();
+    Object.keys(used).forEach(n => { if(Number(n) > seq) seq = Number(n); });
     let code;
-    do { seq += 1; code = formatCode(seq); } while(items[code] !== undefined);
+    do { seq += 1; code = formatCode(seq); } while(used[seq] || items[code] !== undefined);
     localStorage.setItem(SEQ_KEY, String(seq));
     return code;
   }
