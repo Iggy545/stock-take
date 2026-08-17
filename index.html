@@ -3371,7 +3371,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.0.1';
   const BUILD_DATE  = '17 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
@@ -6567,6 +6567,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     var app=null, db=null, itemsCol=null, salesCol=null, metaDoc=null;
     var listeners=[], connected=false, connecting=false;
     var shadowItems={}, shadowSales={};     // last-known-synced serialization
+    // Meta gets its own shadow rather than a reserved key inside shadowItems.
+    // It used to live at shadowItems.__meta, but pushItems() sweeps
+    // Object.keys(shadowItems) looking for records deleted locally — and
+    // items['__meta'] is of course undefined, so every cycle it wrote a junk
+    // deleted:true doc keyed __meta into the items collection and dropped the
+    // signature, which made pushMeta re-send the session meta straight after.
+    var shadowMeta='';
     var suppressUntilLive=false;            // ignore our own initial writes
     var metaTimer=null;
 
@@ -6721,8 +6728,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(!connected) return;
       var seq=null; try{ seq=localStorage.getItem(SEQ_KEY); }catch(e){}
       var sig=serialize({s:sessionDate, q:seq});
-      if(sig===shadowItems.__meta) return;
-      shadowItems.__meta=sig;
+      if(sig===shadowMeta) return;
+      shadowMeta=sig;
       var ts=Date.now(); times.meta=ts; saveTimes();
       metaDoc.set({ sessionDate: sessionDate, codeSequence: seq, updatedAt: ts, by: clientId });
     }
@@ -6753,24 +6760,48 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     // ---- one-off reconcile at connect: merge remote, then push local ----
     async function reconcile(){
+      // Keep the raw remote docs, not just their effect on local state: the
+      // shadow below has to be built from them.
       var isnap=await itemsCol.get();
-      isnap.forEach(function(doc){ applyRemoteItem(doc.id, doc.data()); });
+      var remoteItems={};
+      isnap.forEach(function(doc){ var d=doc.data(); if(d) remoteItems[(d && d.key) || doc.id]=d; });
+      Object.keys(remoteItems).forEach(function(k){ applyRemoteItem(k, remoteItems[k]); });
+
       var ssnap=await salesCol.get();
-      ssnap.forEach(function(doc){ applyRemoteSale(doc.id, doc.data()); });
+      var remoteSales={};
+      ssnap.forEach(function(doc){ var d=doc.data(); if(d) remoteSales[(d && d.key) || doc.id]=d; });
+      Object.keys(remoteSales).forEach(function(k){ applyRemoteSale(k, remoteSales[k]); });
+
       var msnap=await metaDoc.get();
       if(msnap.exists) applyRemoteMeta(msnap.data());
       _origSaveItems(); _origSaveSales(); saveTimes();
-      // rebuild shadow from current local, then push anything remote is missing/older
-      shadowItems={}; Object.keys(items).forEach(function(bc){ shadowItems[bc]=serialize(items[bc]); });
-      shadowSales={}; sales.forEach(function(s){ shadowSales[saleKey(s)]=serialize(s); });
-      // Force-push local records that are newer than what we merged
-      connected=true;
-      // push any local item/sale whose local time is ahead (new local data)
-      Object.keys(items).forEach(function(bc){
-        // if remote never set a time for this record, or local edited after, push it
-        // (handled generically by comparing against a fresh remote fetch is overkill;
-        //  we simply (re)assert local when remote lacked the doc)
+
+      // The shadow means "what the server already has". Building it from
+      // LOCAL data — which is what this did — asserts the server has
+      // everything on this device, so pushItems/pushSales find no difference
+      // and nothing ever uploads. On a first connect to an empty workspace
+      // that meant the whole stock list stayed on one machine, silently, with
+      // the status reading connected. The empty loop that used to sit below
+      // was where the missing push was meant to go.
+      //
+      // Built from the remote docs instead, anything local that the server
+      // lacks is a genuine difference and goes up on the next push. Deleted
+      // docs are left out so they aren't resurrected.
+      shadowItems={};
+      Object.keys(remoteItems).forEach(function(k){
+        if(!remoteItems[k].deleted) shadowItems[k]=serialize(remoteItems[k].data);
       });
+      shadowSales={};
+      Object.keys(remoteSales).forEach(function(k){
+        if(!remoteSales[k].deleted) shadowSales[k]=serialize(remoteSales[k].data);
+      });
+      // Cleared alongside the other two, as it was when it lived inside
+      // shadowItems: applyRemoteMeta has just merged whatever the server
+      // held, so the next pushMeta re-asserts this device's view once.
+      shadowMeta='';
+
+      connected=true;
+      pushItems(); pushSales();
       renderSession(); renderList(); renderSold();
     }
 

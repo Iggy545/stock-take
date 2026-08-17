@@ -9,6 +9,35 @@ fixes.
 
 ---
 
+## v1.0.1 — 17 August 2026
+
+Two team-sync fixes. Both were written on 3 August but had never been published — they
+sat in a working copy that was missing the bulk edit and import features, so that copy
+could not be published as-is. The fixes have now been moved across individually.
+
+### Fixed
+- **A till sitting idle was writing to the cloud database non-stop.** Every save cycle
+  wrote two pointless records — one junk entry into the stock list, and a repeat of the
+  session details — and it never stopped, even with nobody touching the app. On a
+  measured ten-cycle test the old build made 19 writes where the new one makes none.
+  This was burning through the free database allowance for no reason.
+- **First connect to a brand-new team workspace uploaded nothing.** The app assumed the
+  cloud already held everything on the device, so a device joining an empty workspace
+  kept its whole stock list to itself while the header cheerfully read "Synced". Stock
+  only started uploading once each item happened to be edited. A first connect now
+  uploads properly.
+
+### Notes
+- A device that already has the shop's stock will now push anything the cloud is missing
+  the moment it connects. That is the point of the fix, but it does mean the first
+  connect after updating may take a few seconds longer than usual.
+- Pulling data down was never affected — a new phone joining an existing workspace
+  always received the stock list correctly, and still does.
+- There may be leftover junk `__meta` entries in the cloud stock list from the old
+  behaviour. They are harmless and ignored by the app.
+
+---
+
 ## v1.0.0 — 17 August 2026
 
 First version to carry a version number. Everything before this was published without
