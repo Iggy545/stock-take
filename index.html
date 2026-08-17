@@ -36,6 +36,10 @@
     letter-spacing:-0.01em;
   }
   header p{margin:0;font-size:13px;color:var(--muted);}
+  /* Build stamp. Lives in the header so it is readable on every tab without
+     digging through settings — useful when checking the till and a phone are
+     on the same build. */
+  .app-version{margin:6px 0 0;font-size:11px;letter-spacing:.02em;color:var(--muted);opacity:.85;}
 
   .session-bar{
     display:flex;align-items:center;justify-content:space-between;
@@ -420,6 +424,11 @@
   }
   header h1{color:#fff;text-shadow:0 1px 3px rgba(15,23,42,.6);}
   header p{color:rgba(255,255,255,.88);text-shadow:0 1px 3px rgba(15,23,42,.6);}
+  /* On the photo header the muted grey disappears, so the stamp becomes a pill */
+  .app-version{display:inline-block;padding:2px 9px;border-radius:999px;
+               background:rgba(15,23,42,.35);border:1px solid rgba(255,255,255,.25);
+               color:rgba(255,255,255,.9);opacity:1;
+               text-shadow:0 1px 3px rgba(15,23,42,.6);}
   .session-bar{background:rgba(15,23,42,.35);border-color:rgba(255,255,255,.25);}
   .session-bar span{color:rgba(255,255,255,.85);}
   .session-bar strong{color:#fff;}
@@ -457,6 +466,7 @@
       <div class="shop-brand">Soulful Angels Oracle Shop</div>
       <h1>Till &amp; Stock</h1>
       <p>Count stock, ring up sales, print receipts</p>
+      <div class="app-version" id="appVersion"></div>
     </div>
   </div>
   <div class="session-bar">
@@ -848,6 +858,7 @@
       <button class="btn btn-secondary" id="soundBtn">🔊 Sound</button>
       <button class="btn btn-secondary" id="manualEntryBtn">⌨ Type code</button>
     </div>
+    <button class="btn btn-secondary" id="keepScanBtn" style="margin-bottom:8px;">⏹ Closes after each scan</button>
     <button class="btn btn-secondary" id="decoderBtn" style="margin-bottom:8px;">⚙ Decoder: Compatible</button>
     <button class="btn btn-secondary" id="captureBtn" style="margin-bottom:8px;">📸 Capture &amp; read</button>
     <button class="btn btn-secondary" id="photoScanBtn" style="margin-bottom:8px;">🖼 Scan from photo</button>
@@ -3357,6 +3368,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   const SESSION_KEY = 'stockTakeSessionDate';
   const SALES_KEY   = 'stockTakeSales';
 
+  // ---- App version ----
+  // The one place to change the build stamp. Bump APP_VERSION when behaviour
+  // changes and set BUILD_DATE to that day; the header picks it up everywhere.
+  const APP_VERSION = '1.0.0';
+  const BUILD_DATE  = '17 Aug 2026';
+  const versionEl = document.getElementById('appVersion');
+  if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
+
   let items = loadItems();
   let sales = loadSales();
   let sessionDate = localStorage.getItem(SESSION_KEY);
@@ -5079,7 +5098,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net-a.net).forEach(t => {
       csv += [t.name, t.qty, t.net.toFixed(2)].map(esc).join(',') + '\n';
     });
-    const blob = new Blob([csv], { type:'text/csv' });
+    // Excel opens .csv in the system codepage unless the file starts with a
+    // UTF-8 BOM, which is why em dashes and accents came out as "â€”".
+    const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     triggerDownload(url, `report-${r.label.replace(/[^0-9a-zA-Z-]+/g,'_')}.csv`);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -5244,7 +5265,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
     csv += `"TOTAL","","","","","","","","","","${total.toFixed(2)}",""\n`;
 
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM so Excel reads the file as UTF-8 (see report export)
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -5666,6 +5688,40 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
   refreshSoundBtn();
 
+  // Does the camera stay open after a successful scan? Default is no: one scan,
+  // one action, camera down — which is what you want at the till. Counting a box
+  // of stock is the opposite, so the preference is remembered between sessions.
+  let keepScanning = false;
+  try{ keepScanning = localStorage.getItem('stockTakeKeepScanning') === 'on'; }catch(e){}
+  // Guards the gap between a scan and the camera actually closing: without it a
+  // second code drifting through the frame would register on the way out.
+  let closingAfterScan = false;
+
+  function refreshKeepScanBtn(){
+    document.getElementById('keepScanBtn').textContent =
+      keepScanning ? '🔁 Stays open for batch scanning' : '⏹ Closes after each scan';
+  }
+  document.getElementById('keepScanBtn').addEventListener('click', () => {
+    keepScanning = !keepScanning;
+    try{ localStorage.setItem('stockTakeKeepScanning', keepScanning ? 'on' : 'off'); }catch(e){}
+    refreshKeepScanBtn();
+  });
+  refreshKeepScanBtn();
+
+  // Shuts the camera after a scan, unless batch mode is on. The short delay lets
+  // the beep and the on-panel confirmation land before the panel disappears.
+  // Callers must check the scan actually did something first.
+  function closeAfterScanIfNeeded(){
+    if(keepScanning) return;
+    if(!isScanning) return;   // handleScan already closed it (unknown barcode)
+    closingAfterScan = true;
+    // If the camera is torn down and restarted inside the delay (Done, then Scan
+    // again), the generation moves on and this pending close must not fire —
+    // otherwise it would shut the new camera a moment after it opened.
+    const gen = scanGeneration;
+    setTimeout(() => { if(gen === scanGeneration) stopScanner(); }, 700);
+  }
+
   function setScanFeedback(msg, isError){
     const el = document.getElementById('scanLast');
     el.textContent = msg;
@@ -5726,6 +5782,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       torchOn = false;
       decodeAttempts = 0;
       lastDecodeError = '';
+      closingAfterScan = false;
       document.getElementById('scanTally').textContent = '0 scanned';
       document.getElementById('scanLast').style.display = 'none';
       document.getElementById('scanDiag').textContent = 'Starting camera…';
@@ -5809,6 +5866,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function stopScanner(){
     scannerModal.style.display = 'none';
     document.getElementById('torchBtn').style.display = 'none';
+    closingAfterScan = false;
     teardownScanner();   // fire and forget; state is cleared synchronously inside
   }
 
@@ -5867,8 +5925,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         setScanFeedback(`✓ ${decoded}`, false);
         beep('ok');
         buzz(40);
-        handleScan(decoded, true);
+        const ok = handleScan(decoded, true);
         diag.textContent = 'frame decoded OK';
+        if(ok !== false) closeAfterScanIfNeeded();
       }finally{
         try{ inst.clear(); }catch(e){}
       }
@@ -5963,6 +6022,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function onScanSuccess(decodedText){
     const now = Date.now();
 
+    // The camera is already on its way out from the previous scan. Anything it
+    // reads now is a stray, not a deliberate second scan.
+    if(closingAfterScan) return;
+
     // Duplicate scanner instances are now prevented outright, so this only needs
     // to handle the camera re-reading the SAME code many times a second while an
     // item sits in frame. A short global gap catches any stray double-delivery;
@@ -5975,8 +6038,6 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     lastScanTimes[decodedText] = now;
     lastAcceptAt = now;
 
-    // The scanner deliberately stays open so you can work through a pile of items
-    // without reopening the camera each time.
     const ok = handleScan(decodedText, true);
 
     if(ok !== false){
@@ -5984,7 +6045,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       document.getElementById('scanTally').textContent = scanSessionCount + ' scanned';
       beep('ok');
       buzz(40);
+      closeAfterScanIfNeeded();
     } else {
+      // Nothing was counted or added, so the camera stays up for another go.
       beep('error');
       buzz([30,60,30]);
     }
@@ -6172,7 +6235,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
     // Totals row so the spreadsheet is useful without adding formulas by hand
     csv += `"TOTAL","","","","","",${totalUnits},"","${totalValue.toFixed(2)}",""\n`;
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM so Excel reads the file as UTF-8 (see report export)
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

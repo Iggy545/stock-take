@@ -1,0 +1,6 @@
+# Keep index.html as LF in the repo regardless of the machine editing it.
+# Without this, Git rewrites every line to CRLF on a Windows checkout and each
+# commit shows the whole 6,800-line file as changed, which makes the history
+# and the change register useless for spotting what actually moved.
+*.html text eol=lf
+*.md   text eol=lf
