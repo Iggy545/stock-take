@@ -878,7 +878,7 @@
   <div class="modal">
     <h2>Type the code</h2>
     <p class="hint" style="margin:6px 0 12px;">Enter the code printed under the QR square.</p>
-    <input type="text" id="manualCodeInput" placeholder="e.g. SA00001001" autocomplete="off">
+    <input type="text" id="manualCodeInput" placeholder="e.g. KA-0001" autocomplete="off">
     <div class="btn-row" style="margin-top:8px;">
       <button class="btn btn-secondary" id="manualCodeCancel">Cancel</button>
       <button class="btn btn-primary" id="manualCodeOk">Enter</button>
@@ -3376,7 +3376,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   const BUILD_DATE  = '17 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
@@ -5424,14 +5424,41 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- Barcode generation ----
-  const SEQ_KEY = 'stockTakeBarcodeSeq';
+  // Codes read as KA-0001, KA-0002 ... The counter is its own storage key
+  // rather than the old 'stockTakeBarcodeSeq', which was seeded at 1000 to
+  // feed the previous SA00001001 format. Starting a new key means the KA run
+  // begins at 0001 instead of inheriting that seed, and an older build on
+  // another device carries on with its own counter untouched.
+  const SEQ_KEY = 'stockTakeCodeSeq';
+  const CODE_PREFIX = 'KA-';
+
+  function formatCode(n){ return CODE_PREFIX + String(n).padStart(4, '0'); }
+
+  // Highest KA number already used by an item in the stock list.
+  function highestUsedCodeNumber(){
+    let hi = 0;
+    Object.keys(items).forEach(k => {
+      const m = /^KA-(\d+)$/.exec(k);
+      if(m){
+        const n = parseInt(m[1], 10);
+        if(n > hi) hi = n;
+      }
+    });
+    return hi;
+  }
 
   function nextGeneratedCode(){
-    // Code12: "SA" prefix + 10-digit sequence, scannable as Code128
-    let seq = parseInt(localStorage.getItem(SEQ_KEY) || '1000', 10);
-    seq += 1;
+    let seq = parseInt(localStorage.getItem(SEQ_KEY) || '0', 10);
+    if(!(seq >= 0)) seq = 0;
+    // The stock list has the final say, not just the counter. A counter can lag
+    // behind it — a restored backup, or another till that generated codes while
+    // offline — and re-issuing a code an existing item already has would fold
+    // two different items into one record.
+    seq = Math.max(seq, highestUsedCodeNumber());
+    let code;
+    do { seq += 1; code = formatCode(seq); } while(items[code] !== undefined);
     localStorage.setItem(SEQ_KEY, String(seq));
-    return 'SA' + String(seq).padStart(8, '0');
+    return code;
   }
 
   // Builds a QR code model, or null if the text can't be encoded.
@@ -6393,7 +6420,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       version: BACKUP_VERSION,
       savedAt: new Date().toISOString(),
       sessionDate: sessionDate,
-      codeSequence: seq,
+      codeSeqKA: seq,
       receiptSeq: rseq,
       shopName: getShopName(),
       shopFooter: getShopFooter(),
@@ -6491,8 +6518,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             sessionDate = data.sessionDate;
             try{ localStorage.setItem(SESSION_KEY, sessionDate); }catch(e){}
           }
-          if(data.codeSequence){
-            try{ localStorage.setItem(SEQ_KEY, data.codeSequence); }catch(e){}
+          // Deliberately not reading the old 'codeSequence' field: in a
+          // pre-KA backup it holds a 1000-based SA counter, which would push
+          // fresh codes up into the KA-1000s for no reason.
+          if(data.codeSeqKA){
+            try{ localStorage.setItem(SEQ_KEY, data.codeSeqKA); }catch(e){}
           }
           if(data.receiptSeq){
             try{ localStorage.setItem(RSEQ_KEY, data.receiptSeq); }catch(e){}
@@ -6707,7 +6737,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       var changed=false;
       if(d.sessionDate && d.sessionDate!==sessionDate){ sessionDate=d.sessionDate;
         try{ localStorage.setItem(SESSION_KEY, sessionDate); }catch(e){} changed=true; }
-      if(d.codeSequence!=null){ try{ localStorage.setItem(SEQ_KEY, String(d.codeSequence)); }catch(e){} changed=true; }
+      if(d.codeSeqKA!=null){ try{ localStorage.setItem(SEQ_KEY, String(d.codeSeqKA)); }catch(e){} changed=true; }
       times.meta=ts;
       return changed;
     }
@@ -6757,7 +6787,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(sig===shadowMeta) return;
       shadowMeta=sig;
       var ts=Date.now(); times.meta=ts; saveTimes();
-      metaDoc.set({ sessionDate: sessionDate, codeSequence: seq, updatedAt: ts, by: clientId });
+      metaDoc.set({ sessionDate: sessionDate, codeSeqKA: seq, updatedAt: ts, by: clientId });
     }
 
     // called by the wrapped savers whenever local data changes

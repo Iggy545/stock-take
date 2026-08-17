@@ -9,6 +9,27 @@ fixes.
 
 ---
 
+## v1.2.0 — 17 August 2026
+
+### Changed
+- **Generated codes now read `KA-0001` instead of `SA00000001`.** Tap **✨ Generate a QR
+  code** on the Add tab and you get `KA-0001`, then `KA-0002`, and so on — short enough to
+  read off a label and type in by hand if a camera is being difficult. The numbering starts
+  fresh at 0001; the three old `SA…` items keep the codes already printed on them, and so
+  does everything with a `JW-`, `CR-`, `CG-` style code. Nothing needs relabelling.
+
+### Notes
+- The number is shared across tills through the team sync, as before, so two devices cannot
+  be handed the same one.
+- Belt and braces on top of that: before issuing a code the app now checks the stock list
+  and skips any number already in use. So even a till that has been off the internet, or one
+  restored from an old backup, cannot produce a code that another item already has.
+- Restoring a backup made before this version no longer carries its old code counter across.
+  That counter was 1000-based to feed the `SA` format and would have pushed new codes up into
+  the KA-1000s.
+
+---
+
 ## v1.1.0 — 17 August 2026
 
 ### Added
