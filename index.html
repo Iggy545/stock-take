@@ -365,7 +365,12 @@
   .payout-row{padding:8px 2px;border-bottom:1px solid var(--line);}
   .payout-row:last-child{border-bottom:none;}
   .payout-head{display:flex;justify-content:space-between;gap:8px;font-size:14px;font-weight:700;}
-  .payout-detail{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--muted);margin-top:2px;}
+  /* The two figures actually handed over: notes out of the till, and a transfer
+     once the card money has landed. Kept above the workings because this is the
+     line someone acts on. */
+  .payout-split{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;margin-top:3px;color:var(--ink);}
+  .payout-split b{font-weight:700;}
+  .payout-detail{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--muted);margin-top:3px;}
   .payout-total{border-top:2px solid var(--line-strong,var(--line));border-bottom:none;margin-top:4px;padding-top:8px;}
   .payout-total .payout-head{font-size:15px;}
   /* Card reader waiting state. The dot pulses so it is obvious at a glance,
@@ -3541,7 +3546,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.5.1';
   const BUILD_DATE  = '24 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
@@ -5450,7 +5455,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       m.refunds     = round2(m.refunds);
       m.fee         = round2(m.cardSales * rate);
       m.sold        = round2(m.cash + m.other + m.cardSales - m.cardRefunds);
-      m.owed        = round2(m.sold - m.fee);
+      // Split by where the money physically is, because paying it out is two
+      // different jobs: cash comes straight out of the till, card has to be
+      // transferred from the bank once SumUp has settled it.
+      // Cash and other are already net of their own refunds; card carries the
+      // fee, since the fee was only ever charged on card. "Other" is kept apart
+      // rather than lumped in with cash — whatever it was, it is not notes in
+      // the till, and saying otherwise on a payout sheet would be a lie.
+      m.fromCash    = m.cash;
+      m.fromOther   = m.other;
+      m.fromCard    = round2(m.cardSales - m.cardRefunds - m.fee);
+      m.owed        = round2(m.fromCash + m.fromOther + m.fromCard);
       return m;
     }).filter(m => m.sold !== 0 || m.units !== 0 || m.fee !== 0)
       .sort((a,b) => b.owed - a.owed);
@@ -5465,18 +5480,33 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     p.rows.forEach(m => {
       h += `<div class="payout-row">
         <div class="payout-head"><span>${escapeHtml(m.name)}</span><span>${money(m.owed)}</span></div>
+        <div class="payout-split">
+          <span>💵 from cash <b>${money(m.fromCash)}</b></span>
+          <span>💳 from card <b>${money(m.fromCard)}</b></span>
+          ${m.fromOther ? `<span>✨ from other <b>${money(m.fromOther)}</b></span>` : ''}
+        </div>
         <div class="payout-detail">
           <span>${m.units} item${m.units===1?'':'s'}</span>
           <span>cash ${money(m.cash)}</span>
           ${m.other ? `<span>other ${money(m.other)}</span>` : ''}
-          <span>card ${money(m.cardSales)}</span>
+          <span>card sales ${money(m.cardSales)}</span>
           ${m.refunds ? `<span>refunds −${money(m.refunds)}</span>` : ''}
           ${m.fee ? `<span>fee −${money(m.fee)}</span>` : ''}
         </div>
       </div>`;
     });
-    const owed = round2(p.rows.reduce((a,m) => a + m.owed, 0));
-    h += `<div class="payout-row payout-total"><div class="payout-head"><span>Total to pay out</span><span>${money(owed)}</span></div></div>`;
+    const owed   = round2(p.rows.reduce((a,m) => a + m.owed, 0));
+    const tCash  = round2(p.rows.reduce((a,m) => a + m.fromCash, 0));
+    const tCard  = round2(p.rows.reduce((a,m) => a + m.fromCard, 0));
+    const tOther = round2(p.rows.reduce((a,m) => a + m.fromOther, 0));
+    h += `<div class="payout-row payout-total">
+      <div class="payout-head"><span>Total to pay out</span><span>${money(owed)}</span></div>
+      <div class="payout-split">
+        <span>💵 out of the till <b>${money(tCash)}</b></span>
+        <span>💳 from the bank <b>${money(tCard)}</b></span>
+        ${tOther ? `<span>✨ other <b>${money(tOther)}</b></span>` : ''}
+      </div>
+    </div>`;
     return h;
   }
 
@@ -5484,10 +5514,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function payoutCsv(fromStr, toStr){
     const p = makerFigures(fromStr, toStr);
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    let csv = `Maker,Items,Cash,Other,Card,Refunds,Card fee (${p.ratePct}%),Owed\n`;
+    let csv = `Maker,Items,Pay from cash,Pay from card,Pay from other,Owed,Card sales,Refunds,Card fee (${p.ratePct}%)\n`;
     p.rows.forEach(m => {
-      csv += [m.name, m.units, m.cash.toFixed(2), m.other.toFixed(2), m.cardSales.toFixed(2),
-              m.refunds.toFixed(2), m.fee.toFixed(2), m.owed.toFixed(2)].map(esc).join(',') + '\n';
+      csv += [m.name, m.units, m.fromCash.toFixed(2), m.fromCard.toFixed(2),
+              m.fromOther.toFixed(2), m.owed.toFixed(2), m.cardSales.toFixed(2),
+              m.refunds.toFixed(2), m.fee.toFixed(2)].map(esc).join(',') + '\n';
     });
     return csv;
   }

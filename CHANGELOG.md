@@ -9,6 +9,24 @@ fixes.
 
 ---
 
+## v1.5.1 - 24 August 2026
+
+### Added
+- **Payouts now say where the money comes from.** Each maker's line shows what to hand
+  over **from cash** and what to send **from card**, as well as the total. The bottom
+  line splits the same way: how much comes out of the till, and how much needs
+  transferring from the bank once SumUp has settled.
+- Both figures are in the report CSV as **Pay from cash** and **Pay from card**.
+
+### Notes
+- The card fee comes off the card side only, since that is the only side it was ever
+  charged on. Cash refunds reduce the cash side, card refunds the card side, because a
+  refund is recorded against however the sale was originally paid.
+- Payments taken as **Other** get their own figure rather than being counted as cash.
+  Whatever it was, it is not notes in the till, and a payout sheet should not say it is.
+
+---
+
 ## v1.5.0 - 24 August 2026
 
 ### Added
