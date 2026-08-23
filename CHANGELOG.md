@@ -9,6 +9,20 @@ fixes.
 
 ---
 
+## v1.5.2 - 24 August 2026, 00:55
+
+### Changed
+- **The build stamp now shows a time as well as a date**, e.g. `v1.5.2 - 24 Aug 2026, 00:55`.
+  On a day when more than one build goes out, the date alone could not tell you whether a
+  till was on the latest one. 24-hour clock so there is no am/pm to misread across a counter.
+
+### Notes
+- Set by hand, like the version and the date — there is no build step to fill it in, so
+  publishing means editing `APP_VERSION`, `BUILD_DATE` and `BUILD_TIME` together.
+- Change register entries now carry the time too, so this file and the app agree.
+
+---
+
 ## v1.5.1 - 24 August 2026
 
 ### Added

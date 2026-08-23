@@ -3545,11 +3545,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
-  // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.5.1';
+  // changes and set BUILD_DATE and BUILD_TIME to when it was published; the
+  // header picks it up everywhere.
+  //
+  // The time is there because more than one build can go out in a day, and on
+  // those days the date alone cannot tell you whether a till is on the latest
+  // one. 24-hour clock, local time, so there is no am/pm to misread across a
+  // counter. All three are set by hand — there is no build step to fill them
+  // in, so publishing means editing them.
+  const APP_VERSION = '1.5.2';
   const BUILD_DATE  = '24 Aug 2026';
+  const BUILD_TIME  = '00:55';
   const versionEl = document.getElementById('appVersion');
-  if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
+  if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
   let items = loadItems();
   let sales = loadSales();
