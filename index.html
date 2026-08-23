@@ -360,6 +360,14 @@
   .change-due{text-align:center;font-size:15px;padding:10px;border-radius:10px;background:var(--line);margin-bottom:10px;font-weight:600;}
   .change-due.ok{background:rgba(91,123,98,0.15);color:var(--moss-dark);}
   .change-due.short{background:rgba(168,82,74,0.12);color:var(--danger);}
+  /* Supplier payout rows. The amount owed is the number being acted on, so it
+     carries the weight; the workings sit under it in a quieter line. */
+  .payout-row{padding:8px 2px;border-bottom:1px solid var(--line);}
+  .payout-row:last-child{border-bottom:none;}
+  .payout-head{display:flex;justify-content:space-between;gap:8px;font-size:14px;font-weight:700;}
+  .payout-detail{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .payout-total{border-top:2px solid var(--line-strong,var(--line));border-bottom:none;margin-top:4px;padding-top:8px;}
+  .payout-total .payout-head{font-size:15px;}
   /* Card reader waiting state. The dot pulses so it is obvious at a glance,
      across the counter, that the till is still waiting on the customer. */
   .card-wait{display:flex;align-items:center;gap:10px;padding:14px 12px;margin:12px 0 8px;
@@ -676,6 +684,19 @@
       <button class="btn btn-secondary" id="syncBtn" style="width:100%;">☁ Team sync</button>
       <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
       <div class="storage-note" id="storageNote"></div>
+    </div>
+    <div class="card">
+      <div class="quick-sell-head">Supplier payouts</div>
+      <label for="cardFeeInput">Card fee taken off supplier payouts (%)</label>
+      <input type="number" id="cardFeeInput" inputmode="decimal" step="0.01" min="0" max="99" placeholder="1.69">
+      <button class="btn btn-primary" id="cardFeeSaveBtn" style="margin-top:8px;width:100%;">Save</button>
+      <div class="folder-hint" style="margin-top:8px;">
+        Suppliers are paid the full sale price on cash, and the sale price less this
+        percentage on card. SumUp's standard UK rate is <b>1.69%</b>; on their £19/month
+        plan it drops to <b>0.99%</b>. The figures appear at the bottom of
+        <b>Sales &rarr; 📊 Report</b> for whatever period you pick.
+      </div>
+      <div class="storage-note" id="cardFeeNote"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Card reader</div>
@@ -3520,8 +3541,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.4.0';
-  const BUILD_DATE  = '23 Aug 2026';
+  const APP_VERSION = '1.5.0';
+  const BUILD_DATE  = '24 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
 
@@ -5379,6 +5400,98 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     Object.keys(f.pay).forEach(k => f.pay[k]=round2(f.pay[k]));
     return f;
   }
+  /* ---- Supplier payouts ---------------------------------------------------
+     Two of the three of us supply the shop and are paid when our stock sells.
+     A supplier gets the full sale price, less the card fee on anything paid by
+     card. Cash pays out in full.
+
+     The fee is taken on card SALES, not on card sales minus refunds. If a card
+     sale is later refunded the card company generally keeps its fee, so the
+     shop has still paid it — netting refunds off first would quietly hand that
+     cost to the shop instead of the supplier. Every part is shown separately
+     on the report so the arithmetic can be checked rather than trusted.
+     ----------------------------------------------------------------------- */
+  const CARD_FEE_KEY = 'posCardFeePct';
+  function cardFeePct(){
+    let v = NaN;
+    try{ v = parseFloat(localStorage.getItem(CARD_FEE_KEY)); }catch(e){}
+    return (isFinite(v) && v >= 0 && v < 100) ? v : 1.69;   // SumUp standard UK rate
+  }
+
+  function makerFigures(fromStr, toStr){
+    const rate = cardFeePct() / 100;
+    const makers = {};
+    function bucket(name){
+      const key = String(name||'').trim() || '—';
+      if(!makers[key]) makers[key] = { name:key, units:0, cash:0, other:0,
+                                       cardSales:0, cardRefunds:0, refunds:0 };
+      return makers[key];
+    }
+    sales.forEach(s => {
+      const ld = localDateStr(new Date(s.at));
+      if(ld < fromStr || ld > toStr) return;
+      const m = bucket(s.maker);
+      const net = lineNet(s), q = lineQty(s);
+      const pay = (s.pay==='cash' || s.pay==='card') ? s.pay : 'other';
+      m.units += q;                       // signed, so a refund reduces the count
+      if(pay === 'card'){
+        if(net >= 0) m.cardSales += net; else { m.cardRefunds += -net; m.refunds += -net; }
+      }else{
+        m[pay] += net;
+        if(net < 0) m.refunds += -net;
+      }
+    });
+    const rows = Object.keys(makers).map(k => {
+      const m = makers[k];
+      m.cardSales   = round2(m.cardSales);
+      m.cardRefunds = round2(m.cardRefunds);
+      m.cash        = round2(m.cash);
+      m.other       = round2(m.other);
+      m.refunds     = round2(m.refunds);
+      m.fee         = round2(m.cardSales * rate);
+      m.sold        = round2(m.cash + m.other + m.cardSales - m.cardRefunds);
+      m.owed        = round2(m.sold - m.fee);
+      return m;
+    }).filter(m => m.sold !== 0 || m.units !== 0 || m.fee !== 0)
+      .sort((a,b) => b.owed - a.owed);
+    return { rows: rows, ratePct: cardFeePct() };
+  }
+
+  function payoutBodyHtml(fromStr, toStr){
+    const p = makerFigures(fromStr, toStr);
+    if(!p.rows.length) return '';
+    let h = `<div class="quick-sell-head" style="margin-top:14px;">Supplier payouts</div>`;
+    h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales. Cash pays in full.</div>`;
+    p.rows.forEach(m => {
+      h += `<div class="payout-row">
+        <div class="payout-head"><span>${escapeHtml(m.name)}</span><span>${money(m.owed)}</span></div>
+        <div class="payout-detail">
+          <span>${m.units} item${m.units===1?'':'s'}</span>
+          <span>cash ${money(m.cash)}</span>
+          ${m.other ? `<span>other ${money(m.other)}</span>` : ''}
+          <span>card ${money(m.cardSales)}</span>
+          ${m.refunds ? `<span>refunds −${money(m.refunds)}</span>` : ''}
+          ${m.fee ? `<span>fee −${money(m.fee)}</span>` : ''}
+        </div>
+      </div>`;
+    });
+    const owed = round2(p.rows.reduce((a,m) => a + m.owed, 0));
+    h += `<div class="payout-row payout-total"><div class="payout-head"><span>Total to pay out</span><span>${money(owed)}</span></div></div>`;
+    return h;
+  }
+
+  // One line per maker, for handing over as a statement or pasting into a sheet.
+  function payoutCsv(fromStr, toStr){
+    const p = makerFigures(fromStr, toStr);
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    let csv = `Maker,Items,Cash,Other,Card,Refunds,Card fee (${p.ratePct}%),Owed\n`;
+    p.rows.forEach(m => {
+      csv += [m.name, m.units, m.cash.toFixed(2), m.other.toFixed(2), m.cardSales.toFixed(2),
+              m.refunds.toFixed(2), m.fee.toFixed(2), m.owed.toFixed(2)].map(esc).join(',') + '\n';
+    });
+    return csv;
+  }
+
   function zBodyHtml(fromStr, toStr){
     const f = zFigures(fromStr, toStr);
     const top = Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net-a.net).slice(0,5);
@@ -5400,6 +5513,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       h += top.map(t =>
         `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 2px;"><span>${escapeHtml(t.name)} ×${t.qty}</span><span>${money(t.net)}</span></div>`).join('');
     }
+    h += payoutBodyHtml(fromStr, toStr);
     if(f.txns===0 && f.refunds===0){
       h += `<div class="empty-state">No sales in this period.</div>`;
     }
@@ -5475,6 +5589,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net-a.net).forEach(t => {
       csv += [t.name, t.qty, t.net.toFixed(2)].map(esc).join(',') + '\n';
     });
+    const payouts = payoutCsv(r.from, r.to);
+    if(payouts) csv += '\nSupplier payouts\n' + payouts;
     // Excel opens .csv in the system codepage unless the file starts with a
     // UTF-8 BOM, which is why em dashes and accents came out as "â€”".
     const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8;' });
@@ -5502,6 +5618,24 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('shopModal').style.display='none';
     showToast('Receipt settings saved', 'success');
   });
+
+  // ---- Supplier payout settings ----
+  (function initPayoutSettings(){
+    const input = document.getElementById('cardFeeInput');
+    const note  = document.getElementById('cardFeeNote');
+    if(!input) return;
+    function show(){ note.textContent = 'Card sales pay out at ' + (100 - cardFeePct()).toFixed(2) + '% to the supplier.'; }
+    input.value = cardFeePct();
+    show();
+    document.getElementById('cardFeeSaveBtn').addEventListener('click', () => {
+      const v = parseFloat(input.value);
+      if(!isFinite(v) || v < 0 || v >= 100){ showToast('Enter a percentage between 0 and 99', 'error'); return; }
+      try{ localStorage.setItem(CARD_FEE_KEY, String(v)); }catch(e){ showToast('Could not save on this device', 'error'); return; }
+      input.value = cardFeePct();
+      show();
+      showToast('Card fee saved', 'success');
+    });
+  })();
 
   // ---- Card reader settings ----
   // cardWaitModal is deliberately absent from the tap-outside list below: a

@@ -9,6 +9,32 @@ fixes.
 
 ---
 
+## v1.5.0 - 24 August 2026
+
+### Added
+- **Supplier payouts now work themselves out.** At the bottom of **Sales -> Report**,
+  for whatever period you pick, each maker gets a line showing what they are owed and
+  the workings behind it: items sold, cash, card, refunds and the card fee. Until now
+  this could only be done by exporting the CSV and building it in a spreadsheet.
+- **Settings -> Supplier payouts** sets the card fee percentage. It starts at SumUp's
+  standard **1.69%**; their GBP19/month plan drops it to **0.99%**, so it is a setting
+  rather than a fixed number.
+- The payout table is included in the report CSV, so it can be handed over as a
+  statement or pasted into a spreadsheet.
+
+### Notes
+- A supplier is paid the **full sale price on cash**, and the sale price **less the card
+  fee on card**. That matches how the three of us work.
+- **The fee is taken on card sales, not on card sales after refunds.** If a card sale is
+  refunded the card company generally keeps its fee, so the shop has still paid it.
+  Netting refunds off first would quietly move that cost onto the shop.
+- Refunds reduce what is owed, and the item count is a net figure, so a sold-then-returned
+  item does not get paid out.
+- Every part is shown separately rather than just a total, so the arithmetic can be
+  checked rather than taken on trust.
+
+---
+
 ## v1.4.0 — 23 August 2026
 
 ### Added
