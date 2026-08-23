@@ -360,6 +360,16 @@
   .change-due{text-align:center;font-size:15px;padding:10px;border-radius:10px;background:var(--line);margin-bottom:10px;font-weight:600;}
   .change-due.ok{background:rgba(91,123,98,0.15);color:var(--moss-dark);}
   .change-due.short{background:rgba(168,82,74,0.12);color:var(--danger);}
+  /* Card reader waiting state. The dot pulses so it is obvious at a glance,
+     across the counter, that the till is still waiting on the customer. */
+  .card-wait{display:flex;align-items:center;gap:10px;padding:14px 12px;margin:12px 0 8px;
+    border:1px solid var(--line);border-radius:12px;background:var(--paper);font-size:14px;font-weight:600;}
+  .card-wait-dot{width:12px;height:12px;border-radius:50%;background:var(--clay);flex:none;
+    animation:cardPulse 1.1s ease-in-out infinite;}
+  .card-wait-dot.ok{background:var(--moss);animation:none;}
+  .card-wait-dot.bad{background:var(--danger);animation:none;}
+  @keyframes cardPulse{0%,100%{opacity:.35;transform:scale(.85);}50%{opacity:1;transform:scale(1);}}
+  @media (prefers-reduced-motion:reduce){.card-wait-dot{animation:none;}}
   .tender-quick{display:flex;gap:6px;margin-bottom:10px;}
   .tender-quick button{flex:1;padding:9px 4px;border-radius:9px;border:1px solid var(--line);background:var(--panel);font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);}
   .receipt{background:#fff;border:1px dashed var(--line);border-radius:10px;padding:16px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:#111;max-height:45vh;overflow-y:auto;}
@@ -632,6 +642,21 @@
       <button class="btn btn-secondary" id="syncBtn" style="width:100%;">☁ Team sync</button>
       <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
       <div class="storage-note" id="storageNote"></div>
+    </div>
+    <div class="card">
+      <div class="quick-sell-head">Card reader</div>
+      <label for="cardReaderUrlInput">Payment service address</label>
+      <input type="url" id="cardReaderUrlInput" placeholder="https://…workers.dev" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-secondary" id="cardReaderTestBtn">Test</button>
+        <button class="btn btn-primary" id="cardReaderSaveBtn">Save</button>
+      </div>
+      <div class="folder-hint" style="margin-top:8px;">
+        Leave this empty and the <b>Card</b> button just records a card sale, the way it
+        does now. Fill it in and the till sends the amount straight to the SumUp reader.
+        Either way you can always fall back to cash.
+      </div>
+      <div class="storage-note" id="cardReaderNote"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Staff</div>
@@ -966,9 +991,34 @@
       <div class="tender-quick" id="tenderQuick"></div>
       <div class="change-due" id="changeDue">Change: —</div>
     </div>
+    <div id="cardSection" style="display:none;">
+      <div class="folder-hint" id="cardSectionHint"></div>
+    </div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="payCancel">Back</button>
       <button class="btn btn-primary" id="payComplete">Complete sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card payment in progress on the reader -->
+<div class="modal-overlay" id="cardWaitModal" style="display:none;">
+  <div class="modal">
+    <h2>Card payment</h2>
+    <div class="cart-totals" style="border-top:none;padding-top:0;">
+      <div class="t-row grand"><span>Amount</span><span id="cardWaitAmount">£0.00</span></div>
+    </div>
+    <div class="card-wait" id="cardWaitBox">
+      <div class="card-wait-dot" id="cardWaitDot"></div>
+      <div id="cardWaitText">Sending to the reader…</div>
+    </div>
+    <div class="folder-hint" id="cardWaitHint">Ask the customer to tap their card on the reader.</div>
+    <div class="btn-row" id="cardWaitCancelRow" style="margin-top:10px;">
+      <button class="btn btn-secondary" id="cardWaitCancel">Cancel payment</button>
+    </div>
+    <div class="btn-row" id="cardWaitDoneRow" style="display:none;margin-top:10px;">
+      <button class="btn btn-secondary" id="cardWaitBack">Take cash instead</button>
+      <button class="btn btn-primary" id="cardWaitRetry">Try the card again</button>
     </div>
   </div>
 </div>
@@ -3376,8 +3426,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.2.1';
-  const BUILD_DATE  = '17 Aug 2026';
+  const APP_VERSION = '1.3.0';
+  const BUILD_DATE  = '23 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
 
@@ -3948,6 +3998,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     n += 1;
     try{ localStorage.setItem(RSEQ_KEY, String(n)); }catch(e){}
     return tillId() + '-' + String(n).padStart(4,'0');
+  }
+  // What nextReceiptNo() would hand out, without actually taking it. The card
+  // reader needs the number *before* the sale exists, so the printed card slip
+  // can name the receipt — the Solo's printer can't print our itemised one.
+  // Safe to peek: the sequence is per-device (each till has its own prefix), so
+  // nothing else can take this number in between.
+  function peekReceiptNo(){
+    let n = 0;
+    try{ n = parseInt(localStorage.getItem(RSEQ_KEY)||'0',10)||0; }catch(e){}
+    return tillId() + '-' + String(n+1).padStart(4,'0');
   }
   // Old receipts stored plain numbers; new ones are "K7-0001" strings.
   function fmtReceiptNo(v){
@@ -4644,6 +4704,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       b.classList.toggle('sel', b.dataset.pay===payMethod);
     });
     document.getElementById('cashSection').style.display = payMethod==='cash' ? 'block' : 'none';
+
+    // Card with a reader configured is the only method that leaves the app, so
+    // it gets its own wording — pressing "Complete sale" for a card that hasn't
+    // been taken yet would be a lie.
+    const useReader = payMethod==='card' && CardReader.isSet();
+    const cardSec = document.getElementById('cardSection');
+    cardSec.style.display = payMethod==='card' ? 'block' : 'none';
+    document.getElementById('cardSectionHint').textContent = useReader
+      ? 'The amount goes to the card reader when you tap below.'
+      : 'Recorded as a card sale. Take the payment on the reader yourself.';
+    document.getElementById('payComplete').textContent = useReader ? 'Send to card reader' : 'Complete sale';
   }
   document.querySelectorAll('.pay-method').forEach(b => b.addEventListener('click', () => {
     payMethod = b.dataset.pay; refreshPayMethods();
@@ -4678,8 +4749,193 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
   document.getElementById('chargeBtn').addEventListener('click', openPay);
 
+  /* ---- Card reader (SumUp Solo, via the payment service) ------------------
+     The till never talks to SumUp directly — the API key can't live in this
+     file, because this file is public. Instead it asks our own small service,
+     which pushes the amount to the reader and reports back what happened.
+
+     Everything here is additive and optional. With no address configured the
+     Card button behaves exactly as it always has: it records a card sale and
+     someone works the reader by hand. Cash is untouched either way, so a
+     reader or internet problem can never stop the shop selling.
+     ----------------------------------------------------------------------- */
+  const CardReader = (function(){
+    const URL_KEY = 'posCardReaderUrl';
+    const POLL_MS = 2000;
+    const GIVE_UP_MS = 3 * 60 * 1000;   // reader itself times out well before this
+
+    let poll = null, giveUp = null, active = null, finishing = false;
+
+    function get(){ try{ return localStorage.getItem(URL_KEY)||''; }catch(e){ return ''; } }
+    function isSet(){ return !!get(); }
+    // Sign-in tokens travel on these requests, so plain http is refused —
+    // except to this machine, which never puts them on a network and is how
+    // the service gets tried out locally before it is deployed.
+    function isLocal(u){ return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u); }
+    function set(url){
+      const clean = String(url||'').trim().replace(/\/+$/,'');
+      if(clean && !/^https:\/\//i.test(clean) && !isLocal(clean)){
+        throw new Error('The address must start with https://');
+      }
+      try{ localStorage.setItem(URL_KEY, clean); }catch(e){ throw new Error('Could not save on this device'); }
+      return clean;
+    }
+
+    async function call(path, opts){
+      const base = get();
+      if(!base) throw new Error('No card reader address set');
+      const token = await Sync.getIdToken();
+      // No token means nobody is signed in on this device. Refuse rather than
+      // let the request fail confusingly at the far end.
+      if(!token) throw new Error('Sign in to team sync first — the reader needs to know who you are');
+      const res = await fetch(base + path, Object.assign({
+        headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+token }
+      }, opts||{}));
+      let body = null;
+      try{ body = await res.json(); }catch(e){}
+      if(!res.ok) throw new Error((body && body.error) || ('Reader service error ('+res.status+')'));
+      return body;
+    }
+
+    // ---- the waiting screen ----
+    function show(amount, ref){
+      document.getElementById('cardWaitAmount').textContent = money(amount);
+      document.getElementById('cardWaitHint').textContent =
+        'Ask the customer to tap their card on the reader.' + (ref ? ' Receipt ' + ref + '.' : '');
+      state('Sending to the reader…', '');
+      document.getElementById('cardWaitCancelRow').style.display = 'flex';
+      document.getElementById('cardWaitDoneRow').style.display = 'none';
+      document.getElementById('cardWaitModal').style.display = 'flex';
+    }
+    function state(text, kind){
+      document.getElementById('cardWaitText').textContent = text;
+      const dot = document.getElementById('cardWaitDot');
+      dot.className = 'card-wait-dot' + (kind ? ' '+kind : '');
+    }
+    function hide(){
+      document.getElementById('cardWaitModal').style.display = 'none';
+    }
+    function stopTimers(){
+      if(poll){ clearInterval(poll); poll = null; }
+      if(giveUp){ clearTimeout(giveUp); giveUp = null; }
+    }
+    function offerRetry(message){
+      stopTimers();
+      state(message, 'bad');
+      document.getElementById('cardWaitCancelRow').style.display = 'none';
+      document.getElementById('cardWaitDoneRow').style.display = 'flex';
+    }
+
+    // ---- the flow ----
+    async function start(){
+      if(active) return;                       // never two payments at once
+      const f = cartFigures();
+      const amountMinor = Math.round(f.total * 100);
+      if(!(amountMinor > 0)){ showToast('Nothing to charge', 'error'); return; }
+
+      const ref = peekReceiptNo();
+      finishing = false;
+      show(f.total, ref);
+
+      let started;
+      try{
+        started = await call('/checkout', {
+          method:'POST',
+          body: JSON.stringify({ amountMinor: amountMinor, reference: ref })
+        });
+      }catch(e){
+        offerRetry((e && e.message) || 'Could not reach the card reader');
+        return;
+      }
+
+      active = started.id;
+      state('Waiting for the customer to tap…', '');
+      poll = setInterval(check, POLL_MS);
+      giveUp = setTimeout(() => offerRetry('No answer from the reader. Try again, or take cash.'), GIVE_UP_MS);
+    }
+
+    async function check(){
+      if(!active || finishing) return;
+      let now;
+      try{
+        now = await call('/checkout/' + active);
+      }catch(e){
+        // A blip between the till and the service is not a failed payment —
+        // the customer may well have paid. Keep polling and say so.
+        state('Lost the connection — still trying…', '');
+        return;
+      }
+      if(now.status === 'paid'){
+        finishing = true;
+        stopTimers();
+        state('Paid — thank you', 'ok');
+        active = null;
+        // Small pause so the "Paid" state is actually seen before the receipt
+        // covers it, otherwise the sale appears to complete with no feedback.
+        setTimeout(() => { hide(); finishCardSale(now); }, 700);
+      }else if(now.status === 'failed'){
+        active = null;
+        offerRetry(now.failureReason === 'CANCELLED'
+          ? 'Payment cancelled on the reader.'
+          : 'The card was declined. Try again, or take cash.');
+      }else{
+        state('Waiting for the customer to tap…', '');
+      }
+    }
+
+    async function cancel(){
+      const id = active;
+      stopTimers();
+      active = null;
+      state('Cancelling…', '');
+      if(id){
+        // Best effort. If this fails the reader clears itself on its own
+        // timeout, and nothing has been recorded as sold either way.
+        try{ await call('/checkout/'+id+'/cancel', { method:'POST' }); }catch(e){}
+      }
+      hide();
+      document.getElementById('payModal').style.display = 'flex';
+    }
+
+    return { isSet:isSet, get:get, set:set, start:start, cancel:cancel,
+             stop:function(){ stopTimers(); active = null; }, call:call };
+  })();
+
+  // Only reached once the service has confirmed with SumUp that money moved.
+  function finishCardSale(result){
+    const txn = completeSale('card', null, null);
+    document.getElementById('payModal').style.display='none';
+    if(result && result.sumupTransactionCode){
+      showToast('Card payment ' + result.sumupTransactionCode, 'success');
+    }
+    openReceipt(txn.id, { fresh: true });
+  }
+
+  document.getElementById('cardWaitCancel').addEventListener('click', () => CardReader.cancel());
+  document.getElementById('cardWaitRetry').addEventListener('click', () => {
+    document.getElementById('cardWaitModal').style.display='none';
+    CardReader.start();
+  });
+  document.getElementById('cardWaitBack').addEventListener('click', () => {
+    CardReader.stop();
+    document.getElementById('cardWaitModal').style.display='none';
+    payMethod = 'cash';
+    refreshPayMethods();
+    document.getElementById('payModal').style.display = 'flex';
+  });
+
   document.getElementById('payComplete').addEventListener('click', () => {
     const f = cartFigures();
+
+    // Card with a reader configured takes a detour: the sale is only recorded
+    // once the payment is actually confirmed, so a declined card leaves the
+    // basket exactly as it was.
+    if(payMethod==='card' && CardReader.isSet()){
+      document.getElementById('payModal').style.display='none';
+      CardReader.start();
+      return;
+    }
+
     let tendered = null, change = null;
     if(payMethod==='cash'){
       const t = parseFloat(document.getElementById('tenderInput').value);
@@ -5151,6 +5407,49 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('shopModal').style.display='none';
     showToast('Receipt settings saved', 'success');
   });
+
+  // ---- Card reader settings ----
+  // cardWaitModal is deliberately absent from the tap-outside list below: a
+  // stray tap must not dismiss a payment that is live on the reader.
+  function renderCardReaderNote(){
+    const note = document.getElementById('cardReaderNote');
+    if(!note) return;
+    note.textContent = CardReader.isSet()
+      ? 'Card payments go to the reader.'
+      : 'Not set up — the Card button just records the sale.';
+  }
+  (function initCardReaderSettings(){
+    const input = document.getElementById('cardReaderUrlInput');
+    if(!input) return;
+    input.value = CardReader.get();
+    renderCardReaderNote();
+
+    document.getElementById('cardReaderSaveBtn').addEventListener('click', () => {
+      try{
+        const saved = CardReader.set(input.value);
+        input.value = saved;
+        renderCardReaderNote();
+        showToast(saved ? 'Card reader saved' : 'Card reader turned off', 'success');
+      }catch(e){ showToast(e.message, 'error'); }
+    });
+
+    document.getElementById('cardReaderTestBtn').addEventListener('click', async () => {
+      const base = String(input.value||'').trim().replace(/\/+$/,'');
+      if(!base){ showToast('Enter the address first', 'error'); return; }
+      const note = document.getElementById('cardReaderNote');
+      note.textContent = 'Testing…';
+      try{
+        // /health needs no sign-in, so this checks the address itself rather
+        // than tangling a typo up with a login problem.
+        const res = await fetch(base + '/health');
+        note.textContent = res.ok
+          ? 'Answered — the address looks right.'
+          : 'Reached it, but it answered ' + res.status + '.';
+      }catch(e){
+        note.textContent = 'No answer. Check the address and the internet.';
+      }
+    });
+  })();
 
   // tap outside any POS modal to close it
   ['lineEditModal','payModal','receiptModal','refundModal','zReportModal','shopModal'].forEach(id => {
@@ -6975,6 +7274,21 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       return cfg;
     }
 
+    // The card reader service needs to know who is asking. Rather than invent
+    // another password, hand it the Firebase ID token this device already has
+    // from signing in to team sync — short-lived, issued by Google, and the
+    // reader service verifies it against the same email list as the Firestore
+    // rules. Null means "not signed in", which the caller must treat as a
+    // refusal rather than carrying on.
+    async function getIdToken(){
+      try{
+        if(!app || !window.firebase || !firebase.auth) return null;
+        var auth = firebase.auth(app);
+        if(!auth.currentUser) return null;
+        return await auth.currentUser.getIdToken();
+      }catch(e){ return null; }
+    }
+
     function syncNow(){
       if(!connected){ connect(); return; }
       try{ pushItems(); pushSales(); pushMeta(); }catch(e){}
@@ -6987,8 +7301,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       connect:connect, disconnect:disconnect, syncNow:syncNow,
       saveSettings:saveSettings, onLocalItems:onLocalItems, onLocalSales:onLocalSales,
       setStatus:setStatus, isOn:isOn, getCfg:getCfg, getTeam:getTeam, getPin:getPin, getEmail:getEmail,
-      isConnected:function(){ return connected; }
+      isConnected:function(){ return connected; },
+      getIdToken:getIdToken
     };
+
   })();
 
   // Wrap the savers so every local change is mirrored to the team workspace.

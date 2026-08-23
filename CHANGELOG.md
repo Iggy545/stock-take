@@ -9,6 +9,32 @@ fixes.
 
 ---
 
+## v1.3.0 — 23 August 2026
+
+### Added
+- **Card payments can now go straight to a SumUp card reader.** Pick **Card** on the
+  payment screen and the till sends the amount to the reader; the sale is only recorded
+  once the payment is actually confirmed. A declined or cancelled card leaves the basket
+  exactly as it was, with nothing sold, no stock taken off and no receipt number used up.
+- **A new waiting screen** shows the amount and what the reader is doing, with **Cancel
+  payment** while it is running, and **Try the card again** or **Take cash instead** if it
+  fails.
+- **Settings → Card reader** is where the service address goes. It has a **Test** button.
+  The receipt number travels to the reader with the amount, so the printed card slip names
+  the same receipt as the itemised one in the app.
+
+### Notes
+- **Nothing changes unless you fill that address in.** Left empty, the Card button behaves
+  exactly as before — it records a card sale and you work the reader by hand. Cash is
+  untouched either way, so neither the reader nor the internet can stop the shop selling.
+- Reader payments need this device signed in to team sync, because that is how the payment
+  service knows who is asking. If it is not signed in it says so rather than failing oddly.
+- The card key is never in this file. It lives in a small service of our own
+  (`sumup-worker/`), which is also the only thing that decides whether a payment
+  succeeded — it asks SumUp directly rather than trusting anything sent to it.
+
+---
+
 ## v1.2.1 — 17 August 2026
 
 ### Changed
