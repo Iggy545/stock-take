@@ -395,6 +395,40 @@
     body > *{display:none !important;}
     #printArea{display:block !important;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#000;}
     #printArea .receipt{border:none;max-height:none;overflow:visible;}
+    /* Label sheet: a grid of QR labels rather than a receipt, so a whole
+       renumbering can be reprinted in one pass instead of one PNG at a time. */
+    #printArea.labels{font-family:Helvetica,Arial,sans-serif;}
+    #printArea.labels .lbl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5mm 4mm;}
+    #printArea.labels .lbl{break-inside:avoid;page-break-inside:avoid;text-align:center;}
+    #printArea.labels .lbl svg{width:32mm;height:32mm;display:block;margin:0 auto;}
+    #printArea.labels .lbl-name{font-size:8pt;line-height:1.15;height:2.3em;overflow:hidden;margin-bottom:1mm;}
+    #printArea.labels .lbl-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9pt;font-weight:700;letter-spacing:.5px;margin-top:.5mm;}
+    #printArea.labels .lbl-head{grid-column:1/-1;font-size:10pt;font-weight:700;margin:3mm 0 1mm;}
+    @page{margin:10mm;}
+  }
+
+  /* ---- Maker letters & renumbering ---- */
+  .mk-letter{
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;font-size:13px;
+    background:var(--moss,#6b7f5e);color:#fff;border-radius:7px;padding:4px 9px;flex:none;
+  }
+  .rn-group{font-size:12px;font-weight:700;margin:12px 0 4px;color:var(--clay-dark);}
+  .rn-group:first-child{margin-top:0;}
+  .rn-row{
+    display:flex;align-items:center;gap:8px;font-size:12px;
+    padding:5px 2px;border-bottom:1px solid var(--line);
+  }
+  .rn-row:last-child{border-bottom:none;}
+  .rn-old,.rn-new{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;flex:none;}
+  .rn-old{color:var(--muted);text-decoration:line-through;}
+  .rn-new{color:var(--moss-dark,#3f5136);}
+  .rn-same .rn-new{color:var(--muted);font-weight:600;}
+  .rn-same .rn-old{text-decoration:none;}
+  .rn-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);}
+  .rn-scroll{max-height:42vh;overflow:auto;-webkit-overflow-scrolling:touch;margin:10px 0;}
+  .rn-warn{
+    background:#fdf3e7;border:1px solid #e8cfa9;border-radius:10px;
+    padding:10px 12px;font-size:12.5px;line-height:1.5;margin:10px 0;color:#6b4a1d;
   }
 
   /* ---- Icon tab bar ---- */
@@ -668,6 +702,27 @@
       <div class="folder-hint" style="margin-top:8px;">Whoever is picked on the till gets their name recorded on every sale they ring up.</div>
     </div>
     <div class="card">
+      <div class="quick-sell-head">Item codes</div>
+      <div class="storage-note" id="codeSummary" style="margin-bottom:10px;"></div>
+      <div id="makerList"></div>
+      <div class="barcode-generate-row" style="margin-top:8px;">
+        <input type="text" id="makerNameInput" placeholder="Name, e.g. Marie" autocomplete="off">
+        <input type="text" id="makerLetterInput" placeholder="M" maxlength="1" autocomplete="off"
+               autocapitalize="characters" spellcheck="false"
+               style="flex:none;width:52px;text-align:center;text-transform:uppercase;">
+        <button class="btn-generate" id="makerAddBtn" style="margin-bottom:0;">＋ Add</button>
+      </div>
+      <div class="folder-hint" style="margin-top:8px;">
+        Every maker owns a letter. Their codes run <b>KA-001</b> to <b>KA-999</b>, then
+        <b>KB-001</b> and on. Tapping <b>✨ Generate</b> on the Add tab asks whose item
+        it is and takes that maker's next free number.
+      </div>
+      <div class="btn-row" style="margin-top:10px;">
+        <button class="btn btn-secondary" id="renumberBtn">🔢 Renumber codes</button>
+        <button class="btn btn-secondary" id="labelSheetBtn">🏷 Print labels</button>
+      </div>
+    </div>
+    <div class="card">
       <div class="quick-sell-head">Danger zone</div>
       <button class="btn btn-danger" id="clearAllBtn" style="width:100%;">Reset everything</button>
     </div>
@@ -824,6 +879,45 @@
     </p>
     <div id="staffPickList"></div>
     <button class="btn btn-secondary" id="staffModalClose">Close</button>
+  </div>
+</div>
+
+<!-- Whose item is this? Asked when a new code is generated, so the code and
+     the maker can never disagree. -->
+<div class="modal-overlay" id="makerPickModal" style="display:none;">
+  <div class="modal">
+    <h2>✨ Whose item is this?</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      The code comes from whoever you pick — they each have their own run of numbers.
+    </p>
+    <div id="makerPickList"></div>
+    <button class="btn btn-secondary" id="makerPickClose">Cancel</button>
+  </div>
+</div>
+
+<!-- Renumber every code onto the per-maker scheme. Shows the whole change
+     first; nothing moves until Renumber is pressed. -->
+<div class="modal-overlay" id="renumberModal" style="display:none;">
+  <div class="modal">
+    <h2>🔢 Renumber codes</h2>
+    <div id="renumberSummary"></div>
+    <div class="rn-scroll" id="renumberPreview"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="renumberCancel">Cancel</button>
+      <button class="btn btn-primary" id="renumberGo">Renumber</button>
+    </div>
+  </div>
+</div>
+
+<!-- Print a sheet of QR labels -->
+<div class="modal-overlay" id="labelSheetModal" style="display:none;">
+  <div class="modal">
+    <h2>🏷 Print labels</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      Four to a row, sized for a sticker sheet. Pick what to print.
+    </p>
+    <div id="labelSheetOpts"></div>
+    <button class="btn btn-secondary" id="labelSheetClose">Close</button>
   </div>
 </div>
 
@@ -3426,7 +3520,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- App version ----
   // The one place to change the build stamp. Bump APP_VERSION when behaviour
   // changes and set BUILD_DATE to that day; the header picks it up everywhere.
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const BUILD_DATE  = '23 Aug 2026';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}`;
@@ -5110,6 +5204,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   function printHtml(html){
     const area = document.getElementById('printArea');
+    area.className = '';          // may still be set from a label sheet
     area.innerHTML = '<div class="receipt">' + html + '</div>';
     window.print();
   }
@@ -5738,7 +5833,56 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // older build on another device carries on with its own counter untouched.
   const SEQ_KEY = 'stockTakeCodeSeq';
   const BLOCK_SIZE = 999;                  // numbers in one letter block
-  const OURS_RE = /^K([A-Z]+)-0*(\d+)$/;   // a code this generator could have made
+  // A code this generator could have made: <maker letter><block letters>-<number>,
+  // so KA-001, KB-014, CA-287.
+  const OURS_RE = /^([A-Z])([A-Z]+)-0*(\d+)$/;
+
+  // Kay's counter keeps the original storage key, so the run started in 1.3.0
+  // carries straight on; every other maker gets a counter of their own.
+  function seqKeyFor(letter){ return letter === 'K' ? SEQ_KEY : SEQ_KEY + '_' + letter; }
+
+  // ---- Makers ----
+  // Each maker owns the first letter of their codes, which is what makes a code
+  // say whose item it is. The folder still says what kind of thing it is, and
+  // the renumbering below keeps folder, maker and code all agreeing.
+  const MAKERS_KEY = 'stockTakeMakers';
+  const DEFAULT_MAKERS = [
+    { name:'Kay',         letter:'K' },
+    { name:'Claire',      letter:'C' },
+    { name:'Claire Bear', letter:'B' },
+    { name:'Marie',       letter:'M' }
+  ];
+  let makers = loadMakers();
+  function loadMakers(){
+    try{
+      const raw = JSON.parse(localStorage.getItem(MAKERS_KEY));
+      if(Array.isArray(raw) && raw.length){
+        const clean = raw.filter(m => m && m.name && /^[A-Z]$/.test(m.letter));
+        if(clean.length) return clean;
+      }
+    }catch(e){}
+    return DEFAULT_MAKERS.map(m => ({ name:m.name, letter:m.letter }));
+  }
+  function saveMakers(){ try{ localStorage.setItem(MAKERS_KEY, JSON.stringify(makers)); }catch(e){} }
+
+  // Loose match, so 'Claire bear', 'claire  bear' and 'CLAIREBEAR' all land on
+  // the same person - that field is typed by hand and always will be.
+  function normPerson(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+  function makerByName(name){
+    const n = normPerson(name);
+    if(!n) return null;
+    return makers.find(m => normPerson(m.name) === n) || null;
+  }
+  function makerByLetter(L){ return makers.find(m => m.letter === L) || null; }
+
+  // Whose item this is, taking the evidence in the order we trust it. The
+  // folder's top level is filled in on every item and spelled one way, so it
+  // beats the free-typed "Made by" field rather than the other way round.
+  function makerFor(it){
+    if(!it) return null;
+    const top = itemFolder(it).split('/')[0];
+    return makerByName(top) || makerByName(it.maker);
+  }
 
   // 1 → 'A', 26 → 'Z', 27 → 'AA': spreadsheet column lettering, so the blocks
   // keep going past KZ instead of stopping.
@@ -5756,39 +5900,40 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return n;
   }
 
-  function formatCode(n){
+  function formatCode(letter, n){
     const block = Math.floor((n - 1) / BLOCK_SIZE);
     const num   = ((n - 1) % BLOCK_SIZE) + 1;
-    return 'K' + blockLetters(block + 1) + '-' + String(num).padStart(3, '0');
+    return letter + blockLetters(block + 1) + '-' + String(num).padStart(3, '0');
   }
 
-  // Positions in the sequence already taken by an item in the stock list, read
-  // regardless of how the number was padded — so a KA-0001 from the earlier
-  // build rules out KA-001 too.
-  function usedCodeNumbers(){
+  // Positions in ONE maker's sequence already taken by an item in the stock
+  // list, read regardless of how the number was padded - so a KA-0001 from the
+  // earlier build rules out KA-001 too.
+  function usedCodeNumbers(letter){
     const used = {};
     Object.keys(items).forEach(k => {
       const m = OURS_RE.exec(k);
-      if(!m) return;
-      const num = parseInt(m[2], 10);
+      if(!m || m[1] !== letter) return;
+      const num = parseInt(m[3], 10);
       if(num < 1 || num > BLOCK_SIZE) return;
-      used[(blockFromLetters(m[1]) - 1) * BLOCK_SIZE + num] = 1;
+      used[(blockFromLetters(m[2]) - 1) * BLOCK_SIZE + num] = 1;
     });
     return used;
   }
 
-  function nextGeneratedCode(){
-    let seq = parseInt(localStorage.getItem(SEQ_KEY) || '0', 10);
+  function nextGeneratedCode(letter){
+    const seqKey = seqKeyFor(letter);
+    let seq = parseInt(localStorage.getItem(seqKey) || '0', 10);
     if(!(seq >= 0)) seq = 0;
     // The stock list has the final say, not just the counter. A counter can lag
     // behind it — a restored backup, or another till that generated codes while
     // offline — and re-issuing a code an existing item already has would fold
     // two different items into one record.
-    const used = usedCodeNumbers();
+    const used = usedCodeNumbers(letter);
     Object.keys(used).forEach(n => { if(Number(n) > seq) seq = Number(n); });
     let code;
-    do { seq += 1; code = formatCode(seq); } while(used[seq] || items[code] !== undefined);
-    localStorage.setItem(SEQ_KEY, String(seq));
+    do { seq += 1; code = formatCode(letter, seq); } while(used[seq] || items[code] !== undefined);
+    try{ localStorage.setItem(seqKey, String(seq)); }catch(e){}
     return code;
   }
 
@@ -5809,28 +5954,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
   }
 
-  function renderBarcodeSvg(svgId, value){
-    const svg = document.getElementById(svgId);
-    if(!svg) return false;
-
-    const qr = makeQr(value);
-    if(!qr){
-      svg.innerHTML = '';
-      return false;
-    }
-
+  // The shapes that make up one QR, shared by the on-screen preview and the
+  // printed label sheet so the two can never drift apart.
+  function qrShapes(qr, value, showText){
     const count = qr.getModuleCount();
     const cell  = 5;
     const quiet = 4;  // QR spec requires a 4-module quiet zone to scan reliably
     const dim   = (count + quiet * 2) * cell;
-    const textH = 22;
-    const height = dim + textH;
-
-    // Explicit width/height so it renders even where the element can't be measured
-    svg.setAttribute('width', dim);
-    svg.setAttribute('height', height);
-    svg.setAttribute('viewBox', `0 0 ${dim} ${height}`);
-    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const height = dim + (showText ? 22 : 0);
 
     let parts = `<rect x="0" y="0" width="${dim}" height="${height}" fill="#ffffff"/>`;
     for(let r = 0; r < count; r++){
@@ -5841,26 +5972,109 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         }
       }
     }
+    if(showText){
+      const safeText = String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      parts += `<text x="${dim/2}" y="${dim + 15}" text-anchor="middle" `
+             + `font-family="monospace" font-size="13" letter-spacing="1" fill="#000000">${safeText}</text>`;
+    }
+    return { parts, dim, height };
+  }
 
-    const safeText = String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    parts += `<text x="${dim/2}" y="${dim + 15}" text-anchor="middle" `
-           + `font-family="monospace" font-size="13" letter-spacing="1" fill="#000000">${safeText}</text>`;
+  // A complete standalone <svg>, for the label sheet. No caption: the sheet
+  // prints the code as real text underneath, which comes out crisper.
+  function qrSvgMarkup(value){
+    const qr = makeQr(value);
+    if(!qr) return '';
+    const sh = qrShapes(qr, value, false);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${sh.dim}" height="${sh.height}" `
+         + `viewBox="0 0 ${sh.dim} ${sh.height}">${sh.parts}</svg>`;
+  }
 
-    svg.innerHTML = parts;
+  function renderBarcodeSvg(svgId, value){
+    const svg = document.getElementById(svgId);
+    if(!svg) return false;
+
+    const qr = makeQr(value);
+    if(!qr){
+      svg.innerHTML = '';
+      return false;
+    }
+
+    const sh = qrShapes(qr, value, true);
+
+    // Explicit width/height so it renders even where the element can't be measured
+    svg.setAttribute('width', sh.dim);
+    svg.setAttribute('height', sh.height);
+    svg.setAttribute('viewBox', `0 0 ${sh.dim} ${sh.height}`);
+    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+
+    svg.innerHTML = sh.parts;
     return true;
   }
 
+  // Which maker the code sitting in the box was issued for. Kept so a later
+  // change of mind about "Made by" can be spotted before the item is saved.
+  let manualCodeLetter = '';
+
   document.getElementById('generateBarcodeBtn').addEventListener('click', () => {
-    const code = nextGeneratedCode();
+    if(!makers.length){ showToast('Add a maker in Settings first', 'error'); return; }
+    openMakerPick(issueCodeFor);
+  });
+
+  function issueCodeFor(m){
+    const code = nextGeneratedCode(m.letter);
+    manualCodeLetter = m.letter;
     document.getElementById('manualBarcode').value = code;
+    // Fill the maker in as well. Typing it again by hand is exactly how that
+    // field ended up holding three spellings of the same person.
+    document.getElementById('manualMaker').value = m.name;
+    const folderEl = document.getElementById('manualFolder');
+    if(!folderEl.value.trim()) folderEl.value = m.name + '/';
     document.getElementById('manualBarcodePreview').style.display = 'block';
     const ok = renderBarcodeSvg('manualBarcodeSvg', code);
     if(!ok) document.getElementById('manualBarcodePreview').style.display = 'none';
+  }
+
+  function openMakerPick(onPick){
+    const listEl = document.getElementById('makerPickList');
+    listEl.innerHTML = makers.map(m => `
+      <button type="button" class="btn btn-secondary" data-makerpick="${escapeAttr(m.letter)}"
+              style="width:100%;margin-bottom:8px;display:flex;align-items:center;gap:10px;justify-content:center;">
+        <span class="mk-letter">${escapeHtml(m.letter)}</span>${escapeHtml(m.name)}
+      </button>`).join('');
+    listEl.querySelectorAll('[data-makerpick]').forEach(b => b.addEventListener('click', () => {
+      const m = makerByLetter(b.dataset.makerpick);
+      document.getElementById('makerPickModal').style.display = 'none';
+      if(m) onPick(m);
+    }));
+    document.getElementById('makerPickModal').style.display = 'flex';
+  }
+  document.getElementById('makerPickClose').addEventListener('click', () => {
+    document.getElementById('makerPickModal').style.display = 'none';
+  });
+
+  // Changed your mind about whose it is after generating? The code would then
+  // say one person and the item another. Nothing is saved yet at this point,
+  // so the unused number simply goes back in the pot.
+  document.getElementById('manualMaker').addEventListener('change', () => {
+    if(!manualCodeLetter) return;
+    const typed = makerByName(document.getElementById('manualMaker').value);
+    if(!typed || typed.letter === manualCodeLetter) return;
+    const was = makerByLetter(manualCodeLetter);
+    const cur = document.getElementById('manualBarcode').value.trim();
+    askConfirm(
+      'Reissue this code?',
+      cur + ' is one of ' + (was ? was.name : manualCodeLetter) + "'s numbers, but this item is "
+      + typed.name + "'s now. Swap it for the next free code in " + typed.name + "'s run?",
+      'Reissue',
+      () => issueCodeFor(typed)
+    );
   });
 
   // live preview if user types/pastes their own barcode too
   document.getElementById('manualBarcode').addEventListener('input', (e) => {
     const val = e.target.value.trim();
+    manualCodeLetter = '';   // typed by hand, so it is nobody's issued number
     if(!val){
       document.getElementById('manualBarcodePreview').style.display = 'none';
       return;
@@ -5975,6 +6189,406 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     downloadCanvas(canvas, `label-${safeName || currentEditBarcode}.png`);
   });
 
+  // ---- Makers, renumbering and label sheets ----
+  // The codes are the shop's own numbering, and the one thing that ties a
+  // sticker on a shelf to a record in here. Everything below exists to keep
+  // that link honest: one letter per maker, one run of numbers each, and a
+  // renumbering that shows its whole hand before it moves anything.
+
+  const RENUM_KEY = 'stockTakeLastRenumber';
+
+  function countByLetter(){
+    const n = {};
+    Object.keys(items).forEach(bc => {
+      const m = makerFor(items[bc]);
+      if(m) n[m.letter] = (n[m.letter] || 0) + 1;
+    });
+    return n;
+  }
+  function codesForLetter(L){
+    return Object.keys(items).filter(bc => {
+      const m = makerFor(items[bc]);
+      return m && m.letter === L;
+    }).sort();
+  }
+
+  // The code this maker would get next, without spending it.
+  function peekNextCode(letter){
+    let seq = 0;
+    try{ seq = parseInt(localStorage.getItem(seqKeyFor(letter)) || '0', 10) || 0; }catch(e){}
+    const used = usedCodeNumbers(letter);
+    Object.keys(used).forEach(n => { if(Number(n) > seq) seq = Number(n); });
+    let code;
+    do { seq += 1; code = formatCode(letter, seq); } while(used[seq] || items[code] !== undefined);
+    return code;
+  }
+
+  // Makers live on this device but travel with backups and team sync, so both
+  // tills hand out codes from the same set of letters.
+  function syncMakers(){ try{ saveItems(); }catch(e){} }
+
+  function renderMakerUi(){
+    const listEl = document.getElementById('makerList');
+    if(!listEl) return;
+    const counts = countByLetter();
+
+    listEl.innerHTML = makers.length ? makers.map(m => {
+      const n = counts[m.letter] || 0;
+      return `<div class="promo-row">
+        <span class="mk-letter">${escapeHtml(m.letter)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">${escapeHtml(m.name)}</div>
+          <div class="promo-desc">${n} item${n===1?'':'s'} · next code ${escapeHtml(peekNextCode(m.letter))}</div>
+        </div>
+        <div class="promo-actions"><button type="button" class="pr-del" data-makerdel="${escapeAttr(m.letter)}">✕</button></div>
+      </div>`;
+    }).join('')
+      : '<div class="empty-state" style="padding:14px;">No makers yet — ✨ Generate has nobody to ask.</div>';
+
+    listEl.querySelectorAll('[data-makerdel]').forEach(b => b.addEventListener('click', () => {
+      const m = makerByLetter(b.dataset.makerdel);
+      if(!m) return;
+      askConfirm('Remove ' + m.name + '?',
+        'Items keep the codes they already have. ' + m.name + ' just stops being offered when you generate a new one.',
+        'Remove',
+        () => {
+          makers = makers.filter(x => x.letter !== m.letter);
+          saveMakers(); syncMakers(); renderMakerUi();
+          showToast(m.name + ' removed', 'success');
+        });
+    }));
+
+    const el = document.getElementById('codeSummary');
+    if(el){
+      const total = Object.keys(items).length;
+      const lost = Object.keys(items).filter(bc => !makerFor(items[bc])).length;
+      el.textContent = total
+        ? total + ' item' + (total===1?'':'s') + ' · '
+          + (lost ? lost + ' not matched to a maker' : 'every item matched to a maker')
+        : 'No stock yet.';
+    }
+  }
+
+  document.getElementById('makerAddBtn').addEventListener('click', () => {
+    const nameEl = document.getElementById('makerNameInput');
+    const letEl  = document.getElementById('makerLetterInput');
+    const name   = nameEl.value.trim();
+    const letter = letEl.value.trim().toUpperCase();
+    if(!name){ showToast('Give the maker a name', 'error'); return; }
+    if(!/^[A-Z]$/.test(letter)){ showToast('The letter must be a single A to Z', 'error'); return; }
+    const clash = makerByLetter(letter);
+    if(clash){ showToast(letter + ' is already ' + clash.name + "'s letter", 'error'); return; }
+    if(makerByName(name)){ showToast(name + ' is already on the list', 'error'); return; }
+    makers.push({ name, letter });
+    saveMakers(); syncMakers();
+    nameEl.value = ''; letEl.value = '';
+    renderMakerUi();
+    showToast(name + ' added — codes start ' + letter + 'A-001', 'success');
+  });
+
+  // ---- Working out the renumbering ----
+  // Position in a maker's run: KA-001 is 1, KB-001 is 1000, and so on.
+  function posOf(code){
+    const m = OURS_RE.exec(code);
+    if(!m) return 0;
+    const num = parseInt(m[3], 10);
+    if(num < 1 || num > BLOCK_SIZE) return 0;
+    return (blockFromLetters(m[2]) - 1) * BLOCK_SIZE + num;
+  }
+
+  function planRenumber(){
+    // Walk the stock the way the labels will print — folder, then name — so the
+    // numbers end up running down the shelf rather than in scanning order.
+    const order = Object.keys(items).sort((a, b) => {
+      const A = items[a], B = items[b];
+      const fa = itemFolder(A), fb = itemFolder(B);
+      if(fa !== fb) return fa < fb ? -1 : 1;
+      const na = String(A.name || ''), nb = String(B.name || '');
+      if(na !== nb) return na.localeCompare(nb, undefined, { sensitivity:'base' });
+      return a < b ? -1 : 1;
+    });
+
+    const groups = {};
+    const unplaced = [];
+    order.forEach(bc => {
+      const m = makerFor(items[bc]);
+      if(!m){ unplaced.push(bc); return; }
+      (groups[m.letter] || (groups[m.letter] = { maker:m, all:[] })).all.push(bc);
+    });
+
+    const map = {};     // old code -> new code
+    const owner = {};   // old code -> maker, so "Made by" can be tidied too
+    const high = {};    // letter -> highest position used
+    const rows = [];    // what the preview shows
+
+    makers.forEach(m => {
+      const g = groups[m.letter];
+      if(!g) return;
+      const size = g.all.length;
+
+      // A code is already right only if it is this maker's letter AND sits
+      // inside the run their numbers will actually fill. That keeps KA-003
+      // exactly where it is, while CG-001 — Claire's letter, but away up in
+      // block G — comes back down into the run with everything else.
+      const keep = {};
+      g.all.forEach(bc => {
+        const p = posOf(bc);
+        if(bc.charAt(0) === m.letter && p >= 1 && p <= size) keep[bc] = p;
+      });
+
+      const taken = {};
+      const mine = [];
+      let top = 0;
+      Object.keys(keep).forEach(bc => {
+        taken[keep[bc]] = 1;
+        if(keep[bc] > top) top = keep[bc];
+        map[bc] = bc; owner[bc] = m;
+        mine.push({ old:bc, nw:bc, pos:keep[bc] });
+      });
+
+      let pos = 0;
+      g.all.forEach(bc => {
+        if(keep[bc]) return;
+        do { pos++; } while(taken[pos]);
+        taken[pos] = 1;
+        if(pos > top) top = pos;
+        const nw = formatCode(m.letter, pos);
+        map[bc] = nw; owner[bc] = m;
+        mine.push({ old:bc, nw:nw, pos:pos });
+      });
+
+      high[m.letter] = top;
+      mine.sort((a, b) => a.pos - b.pos);
+      rows.push({ maker:m, keep:Object.keys(keep).length, items:mine });
+    });
+
+    // Anything without a maker keeps the code it has.
+    unplaced.forEach(bc => { map[bc] = bc; });
+
+    // Nothing may end up sharing a code. If two ever could, refuse the whole
+    // thing rather than quietly fold two items into one record.
+    const seen = {};
+    let clash = false;
+    Object.keys(map).forEach(o => {
+      if(seen[map[o]]) clash = true;
+      seen[map[o]] = 1;
+    });
+
+    const changing = Object.keys(map).filter(o => map[o] !== o);
+    return { map, owner, high, rows, unplaced, changing, clash };
+  }
+
+  let renumberPlan = null;
+
+  document.getElementById('renumberBtn').addEventListener('click', () => {
+    if(!Object.keys(items).length){ showToast('No stock to renumber yet', 'error'); return; }
+    if(cart.length){ showToast('Finish or clear the basket first — it holds item codes', 'error'); return; }
+    const plan = planRenumber();
+    if(plan.clash){ showToast('Could not work out a safe numbering — nothing changed', 'error'); return; }
+    if(!plan.changing.length){ showToast('Every code is already right', 'success'); return; }
+    renumberPlan = plan;
+    renderRenumberPreview(plan);
+    document.getElementById('renumberModal').style.display = 'flex';
+  });
+
+  function renderRenumberPreview(plan){
+    let h = '';
+    plan.rows.forEach(r => {
+      const first = r.items[0], last = r.items[r.items.length - 1];
+      h += `<div class="promo-row">
+        <span class="mk-letter">${escapeHtml(r.maker.letter)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">${escapeHtml(r.maker.name)}</div>
+          <div class="promo-desc">${r.items.length} item${r.items.length===1?'':'s'} · ${escapeHtml(first.nw)} to ${escapeHtml(last.nw)}${r.keep ? ' · ' + r.keep + ' keep the code they have' : ''}</div>
+        </div>
+      </div>`;
+    });
+
+    if(plan.unplaced.length){
+      h += `<div class="rn-warn"><b>${plan.unplaced.length} item${plan.unplaced.length===1?'':'s'} left alone.</b>
+            Neither the folder nor "Made by" names a maker, so ${plan.unplaced.length===1?'it keeps the code it has':'they keep the codes they have'}.
+            Put ${plan.unplaced.length===1?'it':'them'} in a maker's folder and run this again to bring ${plan.unplaced.length===1?'it':'them'} in.</div>`;
+    }
+
+    const n = plan.changing.length;
+    h += `<div class="rn-warn"><b>${n} label${n===1?'':'s'} will need reprinting.</b>
+          A code changing means the sticker already on that item stops scanning. Save a backup
+          first, do this on one device with the other one closed, and print the new labels
+          before anything goes back on the shelf.</div>
+          <button class="btn btn-secondary" id="renumberBackupBtn" style="width:100%;margin-bottom:4px;">💾 Save a backup first</button>`;
+
+    const sum = document.getElementById('renumberSummary');
+    sum.innerHTML = h;
+    sum.querySelector('#renumberBackupBtn').addEventListener('click', () => {
+      document.getElementById('backupBtn').click();
+    });
+
+    let p = '';
+    plan.rows.forEach(r => {
+      p += `<div class="rn-group">${escapeHtml(r.maker.name)}</div>`;
+      p += r.items.map(x => {
+        const same = x.old === x.nw;
+        const it = items[x.old] || {};
+        return `<div class="rn-row${same ? ' rn-same' : ''}">
+          <span class="rn-old">${escapeHtml(x.old)}</span>
+          <span style="flex:none;color:var(--muted);">${same ? '=' : '→'}</span>
+          <span class="rn-new">${escapeHtml(x.nw)}</span>
+          <span class="rn-name">${escapeHtml(it.name || '')}</span>
+        </div>`;
+      }).join('');
+    });
+    document.getElementById('renumberPreview').innerHTML = p;
+  }
+
+  document.getElementById('renumberCancel').addEventListener('click', () => {
+    document.getElementById('renumberModal').style.display = 'none';
+    renumberPlan = null;
+  });
+
+  document.getElementById('renumberGo').addEventListener('click', () => {
+    const plan = renumberPlan;
+    if(!plan) return;
+    const n = plan.changing.length;
+    askConfirm(
+      'Renumber ' + n + ' code' + (n===1?'':'s') + '?',
+      'This is the point of no return for the stickers already on the stock. If it turns out wrong, restoring the backup is the way back.',
+      'Renumber',
+      () => { applyRenumber(plan); }
+    );
+  });
+
+  async function applyRenumber(plan){
+    const codes = Object.keys(plan.map);
+
+    // Photos live in IndexedDB under the item's own code, so any that have not
+    // been pulled into memory yet must be fetched before that code changes
+    // underneath them.
+    let stuck = 0;
+    for(let i = 0; i < codes.length; i++){
+      const it = items[codes[i]];
+      if(!it || it.photo || !it.hasPhoto) continue;
+      if(photoStoreOK){
+        try{ const p = await PhotoDB.get(codes[i]); if(p) it.photo = p; }catch(e){}
+      }
+      if(!it.photo) stuck++;
+    }
+    if(stuck){
+      showToast('Photos are still loading — try again in a moment', 'error');
+      return;
+    }
+
+    // Build a fresh list rather than renaming one at a time. Numbers are being
+    // reused, so an in-place rename could drop one item on top of another.
+    const before = items;
+    const next = {};
+    codes.forEach(bc => {
+      const it = items[bc];
+      if(!it) return;
+      const m = plan.owner[bc];
+      if(m) it.maker = m.name;   // one spelling of the name from here on
+      next[plan.map[bc]] = it;
+    });
+    items = next;
+
+    if(!saveItems()){
+      items = before;
+      showToast('Renumbering failed — nothing was changed', 'error');
+      return;
+    }
+
+    // Sales carry codes too, and a refund puts stock back by code. Leave them
+    // pointing at the old ones and refunding an old sale would restore nothing.
+    let touched = 0;
+    sales.forEach(sale => {
+      const nw = plan.map[sale.barcode];
+      if(nw && nw !== sale.barcode){ sale.barcode = nw; touched++; }
+    });
+    if(touched) saveSales();
+
+    // Carry each counter on past the run just laid down.
+    Object.keys(plan.high).forEach(L => {
+      try{ localStorage.setItem(seqKeyFor(L), String(plan.high[L])); }catch(e){}
+    });
+    try{
+      localStorage.setItem(RENUM_KEY, JSON.stringify(plan.changing.map(o => plan.map[o])));
+    }catch(e){}
+
+    document.getElementById('renumberModal').style.display = 'none';
+    renumberPlan = null;
+    renderList();
+    renderSold();
+    refreshFolderOptions();
+    renderMakerUi();
+
+    const n = plan.changing.length;
+    showToast(n + ' code' + (n===1?'':'s') + ' renumbered', 'success');
+    // Straight on to the labels: until they are printed and stuck on, the
+    // stock on the shelf is carrying codes that no longer scan.
+    setTimeout(openLabelSheet, 500);
+  }
+
+  // ---- Label sheets ----
+  function openLabelSheet(){
+    if(!Object.keys(items).length){ showToast('No stock to label yet', 'error'); return; }
+    const counts = countByLetter();
+    const opts = [];
+
+    let changed = [];
+    try{ changed = JSON.parse(localStorage.getItem(RENUM_KEY)) || []; }catch(e){}
+    changed = changed.filter(bc => items[bc]);
+    if(changed.length){
+      opts.push({ label:'Just renumbered', n:changed.length, codes:changed.slice().sort() });
+    }
+    makers.forEach(m => {
+      const n = counts[m.letter] || 0;
+      if(n) opts.push({ label:m.name, n:n, codes:codesForLetter(m.letter) });
+    });
+    const all = Object.keys(items).sort();
+    opts.push({ label:'Everything', n:all.length, codes:all });
+
+    const wrap = document.getElementById('labelSheetOpts');
+    wrap.innerHTML = opts.map((o, i) => `
+      <button type="button" class="btn ${i===0 ? 'btn-primary' : 'btn-secondary'}" style="width:100%;margin-bottom:8px;" data-sheet="${i}">
+        ${escapeHtml(o.label)} — ${o.n} label${o.n===1?'':'s'}
+      </button>`).join('');
+    wrap.querySelectorAll('[data-sheet]').forEach(b => b.addEventListener('click', () => {
+      const o = opts[Number(b.dataset.sheet)];
+      document.getElementById('labelSheetModal').style.display = 'none';
+      printLabels(o.codes, o.label);
+    }));
+    document.getElementById('labelSheetModal').style.display = 'flex';
+  }
+
+  document.getElementById('labelSheetBtn').addEventListener('click', openLabelSheet);
+  document.getElementById('labelSheetClose').addEventListener('click', () => {
+    document.getElementById('labelSheetModal').style.display = 'none';
+  });
+
+  function printLabels(codes, title){
+    let h = '<div class="lbl-grid">';
+    if(title) h += '<div class="lbl-head">' + escapeHtml(title) + ' — ' + codes.length + ' label' + (codes.length===1?'':'s') + '</div>';
+    let made = 0;
+    codes.forEach(bc => {
+      const it = items[bc];
+      if(!it) return;
+      const svg = qrSvgMarkup(bc);
+      if(!svg) return;
+      made++;
+      h += '<div class="lbl"><div class="lbl-name">' + escapeHtml(it.name || '') + '</div>'
+         + svg
+         + '<div class="lbl-code">' + escapeHtml(bc) + '</div></div>';
+    });
+    h += '</div>';
+    if(!made){ showToast('Could not draw those labels', 'error'); return; }
+
+    const area = document.getElementById('printArea');
+    area.className = 'labels';
+    area.innerHTML = h;
+    window.print();
+    // Leave it long enough for the print dialog to take its copy.
+    setTimeout(() => { area.className = ''; area.innerHTML = ''; }, 1500);
+  }
+
   // ---- Manual add ----
   document.getElementById('manualAddBtn').addEventListener('click', () => {
     const bc = document.getElementById('manualBarcode').value.trim();
@@ -5989,7 +6603,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(!saveItems()) return;
     manualPhoto.clear();
     ['manualBarcode','manualName','manualQty','manualMaker','manualPrice','manualFolder'].forEach(id => document.getElementById(id).value='');
+    manualCodeLetter = '';
     document.getElementById('manualBarcodePreview').style.display = 'none';
+    renderMakerUi();   // the counts and next-code lines have moved on
     document.querySelector('.tab[data-tab="list"]').click();
     renderList();
     showToast('Item added', 'success');
@@ -6746,12 +7362,24 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     let rseq = null;
     try{ rseq = localStorage.getItem(RSEQ_KEY); }catch(e){}
 
+    // One counter per maker. codeSeqKA is still written on its own so a v1.3.0
+    // build can read this backup and carry on with Kay's numbering.
+    const codeSeqs = {};
+    makers.forEach(m => {
+      try{
+        const v = localStorage.getItem(seqKeyFor(m.letter));
+        if(v != null) codeSeqs[m.letter] = v;
+      }catch(e){}
+    });
+
     const backup = {
       app: 'stock-take',
       version: BACKUP_VERSION,
       savedAt: new Date().toISOString(),
       sessionDate: sessionDate,
       codeSeqKA: seq,
+      codeSeqs: codeSeqs,
+      makers: makers,
       receiptSeq: rseq,
       shopName: getShopName(),
       shopFooter: getShopFooter(),
@@ -6855,6 +7483,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           if(data.codeSeqKA){
             try{ localStorage.setItem(SEQ_KEY, data.codeSeqKA); }catch(e){}
           }
+          if(data.codeSeqs && typeof data.codeSeqs === 'object'){
+            Object.keys(data.codeSeqs).forEach(L => {
+              try{ localStorage.setItem(seqKeyFor(L), String(data.codeSeqs[L])); }catch(e){}
+            });
+          }
+          if(Array.isArray(data.makers)){
+            const clean = data.makers.filter(m => m && m.name && /^[A-Z]$/.test(m.letter));
+            if(clean.length){ makers = clean; saveMakers(); }
+          }
           if(data.receiptSeq){
             try{ localStorage.setItem(RSEQ_KEY, data.receiptSeq); }catch(e){}
           }
@@ -6868,6 +7505,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           renderSession();
           renderList();
           renderSold();
+          renderMakerUi();
           showToast(`Restored ${itemCount} item${itemCount===1?'':'s'}`, 'success');
         }
       );
@@ -7069,6 +7707,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(d.sessionDate && d.sessionDate!==sessionDate){ sessionDate=d.sessionDate;
         try{ localStorage.setItem(SESSION_KEY, sessionDate); }catch(e){} changed=true; }
       if(d.codeSeqKA!=null){ try{ localStorage.setItem(SEQ_KEY, String(d.codeSeqKA)); }catch(e){} changed=true; }
+      if(d.codeSeqs && typeof d.codeSeqs==='object'){
+        Object.keys(d.codeSeqs).forEach(function(L){
+          try{ localStorage.setItem(seqKeyFor(L), String(d.codeSeqs[L])); }catch(e){}
+        });
+        changed=true;
+      }
+      // Only ever applied when the other device actually sent a list, so a till
+      // still on an older build cannot wipe the makers by staying quiet.
+      if(Array.isArray(d.makers) && d.makers.length){
+        var clean=d.makers.filter(function(m){ return m && m.name && /^[A-Z]$/.test(m.letter); });
+        if(clean.length && serialize(clean)!==serialize(makers)){
+          makers=clean; saveMakers(); renderMakerUi(); changed=true;
+        }
+      }
       times.meta=ts;
       return changed;
     }
@@ -7114,11 +7766,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     function pushMeta(){
       if(!connected) return;
       var seq=null; try{ seq=localStorage.getItem(SEQ_KEY); }catch(e){}
-      var sig=serialize({s:sessionDate, q:seq});
+      var seqs={};
+      makers.forEach(function(m){
+        try{ var v=localStorage.getItem(seqKeyFor(m.letter)); if(v!=null) seqs[m.letter]=v; }catch(e){}
+      });
+      var sig=serialize({s:sessionDate, q:seq, c:seqs, m:makers});
       if(sig===shadowMeta) return;
       shadowMeta=sig;
       var ts=Date.now(); times.meta=ts; saveTimes();
-      metaDoc.set({ sessionDate: sessionDate, codeSeqKA: seq, updatedAt: ts, by: clientId });
+      metaDoc.set({ sessionDate: sessionDate, codeSeqKA: seq, codeSeqs: seqs,
+                    makers: makers, updatedAt: ts, by: clientId });
     }
 
     // called by the wrapped savers whenever local data changes
@@ -7373,6 +8030,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   renderSession();
   renderList();
   renderSold();   // also renders the till (basket survives a refresh)
+  renderMakerUi();
   initPhotos();   // migrate/hydrate photos, then trigger sync auto-connect
   // Safety net: if IndexedDB ever stalls, still bring sync up shortly after.
   setTimeout(maybeAutoConnectSync, 4000);

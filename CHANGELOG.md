@@ -9,6 +9,40 @@ fixes.
 
 ---
 
+## v1.4.0 — 23 August 2026
+
+### Added
+- **Item codes now say whose item it is.** Every maker owns a letter, and their codes run
+  from **001 to 999** within it before rolling on to the next block: Kay **KA-001 … KA-999**
+  then **KB-001**, Claire **CA-…**, Claire Bear **BA-…**, Marie **MA-…**. Before this, every
+  code began with K no matter who made the item.
+- **✨ Generate now asks whose item it is** and takes that maker's next free number. It fills
+  in **Made by** and starts the folder off for you, so the code, the folder and the maker
+  cannot end up disagreeing. Change **Made by** afterwards and it offers to reissue the code.
+- **Settings → Item codes** lists the makers, how many items each has and what their next
+  code will be. Add or remove a maker there; each one needs a letter of their own.
+- **Settings → Renumber codes** puts the whole stock list onto the scheme in one pass. It
+  shows every old → new code first and changes nothing until you confirm. Items already
+  sitting on the right number keep it, so their labels do not need reprinting. It is safe
+  to run again later — it only moves what is actually out of place.
+- **Settings → Print labels** prints a sheet of QR labels, four to a row: just the ones a
+  renumbering changed, one maker's stock, or everything. Previously labels came one PNG at
+  a time.
+
+### Notes
+- **Renumbering means relabelling.** A code that changes stops the sticker already on that
+  item from scanning. Save a backup first, do it on one device with the other closed, and
+  print the new labels before anything goes back on the shelf.
+- Whose item it is comes from the **top level of the folder** first (Kay/…, Claire/…), and
+  only then from **Made by** — the folder is the more reliable of the two. Anything neither
+  field can place is listed and left alone rather than guessed at.
+- Renumbering also updates the codes recorded against past sales, so refunding an old sale
+  still puts the stock back, and it settles **Made by** on one spelling per person.
+- Makers and their counters travel with backups and team sync, so both tills issue codes
+  from the same set. A till still on v1.3.0 carries on with Kay's numbering untouched.
+
+---
+
 ## v1.3.0 — 23 August 2026
 
 ### Added
