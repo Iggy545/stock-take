@@ -3621,9 +3621,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.7.1';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '16:40';
+  const BUILD_TIME  = '22:47';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3636,6 +3636,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   let html5QrCode = null;
   let currentEditBarcode = null;
+  let editPhotoWasSet = false;   // did the edit form open with a photo showing?
   let pendingScanBarcode = null;
   let activeTab = 'list'; // scanning behaves differently on the Sold tab
 
@@ -3676,15 +3677,42 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   var photoBytes = 0;         // approx total size of photos, for the usage note
   function _plen(s){ return s ? s.length : 0; }
 
+  // Resolves once initPhotos() has finished pulling photos back into memory.
+  // Anything that copies the whole stock list — a backup above all — must wait
+  // for this, or it writes a file that looks complete and holds no photos.
+  var _photosReady = null;
+  var photosReady = new Promise(function(res){ _photosReady = res; });
+
   // Mirror any changed photos into IndexedDB and drop removed ones.
+  //
+  // An item arriving with no photo means "nothing was said about a photo", NOT
+  // "this item has no photo". A backup taken before the photos hydrated, and a
+  // synced record that travelled without one, look identical to a deliberate
+  // removal — and treating all three the same used to delete the photo for
+  // good. So a stored photo is now only destroyed by the item being deleted, or
+  // by someone pressing Remove photo, which sets photoCleared on the record.
+  // Anything else that turns up empty gets the photo we already hold put back.
   function reconcilePhotos(){
     if(!photoStoreOK) return;
     Object.keys(items).forEach(function(bc){
-      var p = items[bc].photo || '';
+      var it = items[bc];
+      var p = it.photo || '';
+      if(!p && !it.photoCleared && photoCache[bc]){
+        it.photo = photoCache[bc];   // put it back rather than lose it
+        return;
+      }
       if(photoCache[bc] !== p){
         photoBytes += _plen(p) - _plen(photoCache[bc]||'');
-        if(p){ photoCache[bc]=p; PhotoDB.set(bc, p).catch(function(){}); }
-        else { delete photoCache[bc]; PhotoDB.del(bc).catch(function(){}); }
+        if(p){
+          photoCache[bc]=p;
+          if(it.photoCleared) delete it.photoCleared;
+          PhotoDB.set(bc, p).catch(function(){});
+        }
+        else if(it.photoCleared){
+          delete photoCache[bc];
+          delete it.hasPhoto;      // the marker has to go too, or it reads as a lost photo
+          PhotoDB.del(bc).catch(function(){});
+        }
       }
     });
     Object.keys(photoCache).forEach(function(bc){
@@ -3703,7 +3731,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     Object.keys(items).forEach(function(bc){
       var it=items[bc], c={};
       for(var k in it){ if(k!=='photo') c[k]=it[k]; }
-      if(it.photo) c.hasPhoto=1;      // remember a photo exists until it hydrates
+      // Remember a photo exists until it hydrates — and clear the marker when it
+      // doesn't, or a removed photo leaves behind a note saying one is missing.
+      if(it.photo) c.hasPhoto=1; else delete c.hasPhoto;
       out[bc]=c;
     });
     return out;
@@ -3764,7 +3794,33 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       renderList(document.getElementById('searchBox') ? document.getElementById('searchBox').value : '');
       renderSold();
     }catch(e){ /* leave photoStoreOK false -> old behaviour */ }
-    finally{ maybeAutoConnectSync(); }
+    finally{ if(_photosReady) _photosReady(); maybeAutoConnectSync(); }
+  }
+
+  // Wait for the photos to be back in memory, then fetch anything still missing
+  // straight from IndexedDB. Returns how many items are still short a photo they
+  // are supposed to have — anything above zero means a copy taken now would be
+  // incomplete, so the caller should refuse rather than write a lossy file.
+  async function ensurePhotosHydrated(){
+    try{ await photosReady; }catch(e){}
+    if(!photoStoreOK) return 0;
+    var missing = 0;
+    var bcs = Object.keys(items);
+    for(var i=0;i<bcs.length;i++){
+      var it = items[bcs[i]];
+      if(!it || it.photo || !it.hasPhoto || it.photoCleared) continue;
+      try{
+        var p = await PhotoDB.get(bcs[i]);
+        if(p) it.photo = p; else missing++;
+      }catch(e){ missing++; }
+    }
+    return missing;
+  }
+
+  // How many items are carrying a photo right now.
+  function photoCount(src){
+    var o = src || items;
+    return Object.keys(o).filter(function(bc){ return o[bc] && o[bc].photo; }).length;
   }
 
   // Rough estimate of how much space the photos are using.
@@ -7841,6 +7897,24 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('editItemMaker').value = it.maker || '';
     document.getElementById('editItemPrice').value = (it.price !== undefined && it.price !== null) ? it.price : '';
     editPhoto.set(it.photo || '');
+    // If this item's photo hasn't come back from IndexedDB yet, fetch it now, so
+    // the form never opens showing an empty photo box for an item that has one.
+    // Saving from that state would otherwise read as "remove the photo".
+    editPhotoWasSet = !!it.photo;
+    if(!it.photo && it.hasPhoto){
+      (async function(){
+        try{
+          await photosReady;
+          if(currentEditBarcode !== barcode) return;      // they moved on
+          var p = it.photo || (photoStoreOK ? await PhotoDB.get(barcode) : null);
+          if(p && currentEditBarcode === barcode){
+            it.photo = p;
+            editPhoto.set(p);
+            editPhotoWasSet = true;
+          }
+        }catch(e){}
+      })();
+    }
     document.getElementById('editItemCounted').value = it.counted || 0;
 
     // Set pricing: own rule, partner in someone else's rule, or neither
@@ -7904,7 +7978,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     it.qty = parseInt(document.getElementById('editItemQty').value,10) || 0;
     it.maker = document.getElementById('editItemMaker').value.trim();
     it.price = parseFloat(document.getElementById('editItemPrice').value) || 0;
-    it.photo = editPhoto.value;
+    // Pressing Remove photo is the one thing that is allowed to destroy a
+    // stored photo, so say so explicitly on the record. Without this marker
+    // reconcilePhotos() cannot tell a removal from a photo that simply has not
+    // loaded yet, and it has to assume the safe one.
+    if(editPhoto.value){ it.photo = editPhoto.value; delete it.photoCleared; }
+    else if(editPhotoWasSet){ it.photoCleared = 1; it.photo = ''; }
+    // else: the form opened without a photo and still has none — nothing to say.
     it.counted = parseInt(document.getElementById('editItemCounted').value,10) || 0;
     if(newSet) it.set = newSet;
     else if(clearSet) delete it.set;
@@ -8090,6 +8170,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       return;
     }
 
+    // Photos live in IndexedDB and arrive a moment after everything else. A
+    // backup taken in that moment used to come out looking complete and holding
+    // no photos at all — so wait for them, and refuse outright if any are still
+    // unreadable rather than write a file that quietly isn't a backup.
+    const missingPhotos = await ensurePhotosHydrated();
+    if(missingPhotos){
+      showToast(missingPhotos + ' photo' + (missingPhotos===1?'':'s') + ' could not be read — backup NOT saved', 'error');
+      return;
+    }
+    const photosIncluded = photoCount();
+
     let seq = null;
     try{ seq = localStorage.getItem(SEQ_KEY); }catch(e){}
 
@@ -8118,7 +8209,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       shopName: getShopName(),
       shopFooter: getShopFooter(),
       items: items,
-      sales: sales
+      sales: sales,
+      photos: photosIncluded   // so a restore can say what the file actually holds
     };
 
     const filename = `stock-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -8130,9 +8222,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         await navigator.share({
           files: [file],
           title: 'Stock take backup',
-          text: `Stock backup — ${Object.keys(items).length} items, ${sales.length} sales`
+          text: `Stock backup — ${Object.keys(items).length} items, ${photosIncluded} photos, ${sales.length} sales`
         });
-        showToast('Backup shared', 'success');
+        showToast(`Backup shared — ${photosIncluded} photo${photosIncluded===1?'':'s'}`, 'success');
         return;
       }catch(e){
         // User cancelled the share sheet — not an error, just stop quietly.
@@ -8150,7 +8242,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast('Backup saved', 'success');
+      showToast(`Backup saved — ${photosIncluded} photo${photosIncluded===1?'':'s'}`, 'success');
     }catch(e){
       showToast('Could not create the backup file', 'error');
     }
@@ -8167,7 +8259,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     const reader = new FileReader();
     reader.onerror = () => showToast('Could not read that file', 'error');
-    reader.onload = () => {
+    reader.onload = async () => {
       let data;
       try{
         data = JSON.parse(reader.result);
@@ -8189,12 +8281,22 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const savedOn = data.savedAt ? fmtDate(data.savedAt) : 'unknown date';
       const haveNow = Object.keys(items).length;
 
+      // Get our own photos into memory before comparing, so the count we quote
+      // is the real one and reconcilePhotos() knows what it is holding.
+      await ensurePhotosHydrated();
+      const incomingPhotos = photoCount(incomingItems);
+      const havePhotos = photoCount();
+
       askConfirm(
         'Restore this backup?',
-        `The backup from ${savedOn} holds ${itemCount} item${itemCount===1?'':'s'} and ${incomingSales.length} sale${incomingSales.length===1?'':'s'}. `
+        `The backup from ${savedOn} holds ${itemCount} item${itemCount===1?'':'s'}, `
+        + `${incomingPhotos} photo${incomingPhotos===1?'':'s'} and ${incomingSales.length} sale${incomingSales.length===1?'':'s'}. `
         + (haveNow > 0
             ? `This REPLACES the ${haveNow} item${haveNow===1?'':'s'} currently on this device. Save a backup first if you need them.`
-            : `This device has no stock yet, so nothing will be lost.`),
+            : `This device has no stock yet, so nothing will be lost.`)
+        + (incomingPhotos < havePhotos
+            ? ` The backup carries fewer photos than this device has (${havePhotos}); the ones already here are kept.`
+            : ''),
         'Restore',
         () => {
           items = incomingItems;
@@ -8240,7 +8342,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           renderList();
           renderSold();
           renderMakerUi();
-          showToast(`Restored ${itemCount} item${itemCount===1?'':'s'}`, 'success');
+          // saveItems() has just run reconcilePhotos(), which puts back any photo
+          // the file didn't carry, so count again rather than quoting the file.
+          const photosAfter = photoCount();
+          showToast(`Restored ${itemCount} item${itemCount===1?'':'s'}, ${photosAfter} photo${photosAfter===1?'':'s'}`, 'success');
         }
       );
     };

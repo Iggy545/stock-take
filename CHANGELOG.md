@@ -9,6 +9,39 @@ fixes.
 
 ---
 
+## v1.7.1 - 24 August 2026, 22:47
+
+### Fixed
+- **A backup can no longer be saved without the photos in it.** Photos are held separately
+  from the rest of the stock list and load a moment later. Tapping **Save backup** in that
+  moment produced a file that named every item, looked the right size, and contained not one
+  photo. The backup now waits for the photos, and if any genuinely cannot be read it refuses
+  to write the file at all rather than hand you something that is not a backup.
+- **Restoring a backup no longer deletes photos.** Restoring one of those photo-less files
+  wiped every photo on the device for good — the app read "this item has no photo" as
+  "delete this item's photo". The same thing could happen when a record arrived from the
+  other device without its photo attached. An item turning up with no photo now means
+  *nothing was said about a photo*, and the one already here is kept and put back.
+- **The only things that delete a photo now** are deleting the item, and pressing
+  **Remove photo** and saving. That press is recorded on the item, so it still travels to
+  the other device properly.
+- **The edit form waits for an item's photo** before it opens the photo box empty. Saving
+  an item whose photo had not loaded yet used to read as removing it.
+
+### Added
+- **Photo counts wherever backups are mentioned.** Saving one says *Backup saved — 494
+  photos*, and restoring says how many photos the file holds beside the item and sale
+  counts. A file with no photos in it is now obvious before it is restored, not after.
+- If a backup carries fewer photos than the device already has, the restore box says so and
+  says the ones already here are kept.
+
+### Notes
+- Backups now record the photo count in the file. Older backups are still restorable exactly
+  as before, and are now *safe* to restore — with this build, restoring the photo-less backup
+  that caused this no longer loses anything.
+
+---
+
 ## v1.7.0 - 24 August 2026, 16:40
 
 ### Added
