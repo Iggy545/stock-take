@@ -394,6 +394,16 @@
   .receipt .r-total{font-size:15px;font-weight:800;}
   .receipt .r-foot{text-align:center;margin-top:8px;color:#555;}
   .refund-badge{display:inline-block;padding:2px 7px;border-radius:6px;background:rgba(168,82,74,0.14);color:var(--danger);font-size:11px;font-weight:700;}
+  /* "Money still to go back" — amber rather than red, because nothing is wrong,
+     there is just a job left to do. Fixed colours, not theme variables: this has
+     to read as a warning whichever palette is in use. */
+  .due-badge{display:inline-block;padding:2px 7px;border-radius:6px;background:rgba(180,120,40,.16);color:#8a5a12;font-size:11px;font-weight:700;}
+  .due-banner{
+    display:flex;align-items:center;gap:10px;
+    background:rgba(180,120,40,.10);border:1px solid #b47828;border-radius:12px;
+    padding:10px 12px;margin-bottom:12px;font-size:13px;font-weight:600;color:#8a5a12;
+  }
+  .due-banner span{flex:1;min-width:0;}
   .txn-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer;}
   .txn-row:last-child{border-bottom:none;}
   .disc-type{display:flex;gap:8px;margin-bottom:10px;}
@@ -653,6 +663,10 @@
 
     <div class="hint" id="soldHint">
       Tap a sale to see its receipt, reprint it, or refund it.
+    </div>
+
+    <div class="due-banner" id="cardRefundBanner" style="display:none;">
+      <span id="cardRefundBannerText"></span>
     </div>
 
     <button class="btn btn-primary" id="zReportBtn" style="margin-bottom:12px;">📊 Report</button>
@@ -1151,6 +1165,10 @@
     <div class="btn-row" style="margin-top:12px;">
       <button class="btn btn-secondary" id="receiptPrintBtn">🖨 Print</button>
       <button class="btn btn-secondary" id="receiptShareBtn">📤 Share</button>
+    </div>
+    <div class="due-banner" id="receiptCardRefundNote" style="display:none;margin-top:12px;margin-bottom:0;"></div>
+    <div class="btn-row" id="receiptCardRefundRow" style="margin-top:8px;display:none;">
+      <button class="btn btn-secondary" id="receiptCardRefundBtn">✓ Mark card refund as sent</button>
     </div>
     <div class="btn-row" id="receiptRefundRow" style="margin-top:8px;display:none;">
       <button class="btn btn-danger" id="receiptRefundBtn">↩ Refund…</button>
@@ -3553,9 +3571,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.5';
+  const APP_VERSION = '1.5.6';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '02:05';
+  const BUILD_TIME  = '02:41';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5153,6 +5171,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         change:   (i===0 && change!=null)   ? change   : null,
         sumupTxId: (i===0 && card && card.txId) ? card.txId : null,
         sumupCode: (i===0 && card && card.code) ? card.code : null,
+        cardRefund: null,
         kind: 'sale',
         refundOfLine: null,
         promo: (cart.promo && f.promoDisc>0) ? cart.promo.code : null,
@@ -5180,7 +5199,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(!map[t]){
         map[t] = { id:t, lines:[], at:s.at||'', receiptNo:s.receiptNo||null,
                    pay:s.pay||'', kind:s.kind||'sale', tendered:null, change:null,
-                   sumupTxId:null, sumupCode:null };
+                   sumupTxId:null, sumupCode:null, cardRefund:null };
         order.push(t);
       }
       const g = map[t];
@@ -5190,6 +5209,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(s.change!=null) g.change = s.change;
       if(s.sumupTxId) g.sumupTxId = s.sumupTxId;
       if(s.sumupCode) g.sumupCode = s.sumupCode;
+      // "Sent" wins over "due". The lines of one refund are always written
+      // together, so they should never disagree — but if a sync merge ever left
+      // them split, the safe reading is that the money has already gone back,
+      // because the alternative invites refunding the same customer twice.
+      if(s.cardRefund === 'sent') g.cardRefund = 'sent';
+      else if(s.cardRefund === 'due' && g.cardRefund !== 'sent') g.cardRefund = 'due';
       if(s.kind==='refund') g.kind = 'refund';
     });
     order.sort((a,b) => map[b].at.localeCompare(map[a].at));
@@ -5286,6 +5311,27 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const refundRow = document.getElementById('receiptRefundRow');
     refundRow.style.display =
       (g.kind!=='refund' && refundableLines(g).some(r => r.left > 0)) ? 'flex' : 'none';
+
+    // Say plainly what still has to happen, and where. The app cannot do this
+    // part, so the least it can do is not leave someone guessing.
+    const note = document.getElementById('receiptCardRefundNote');
+    const noteRow = document.getElementById('receiptCardRefundRow');
+    if(g.kind==='refund' && g.cardRefund==='due'){
+      const code = originalCardCode(g);
+      note.innerHTML = `<span>💳 <b>${escapeHtml(money(-txnTotal(g)))} still to refund on the card reader.</b>
+        Menu → Sales history → ${code ? 'card slip <b>'+escapeHtml(code)+'</b>' : 'find the original sale'}
+        → Refund. The stock is already back and the books are right — only the money is outstanding.</span>`;
+      note.style.display = 'flex';
+      noteRow.style.display = 'flex';
+    }else if(g.kind==='refund' && g.cardRefund==='sent'){
+      const when = g.lines.map(l => l.cardRefundAt).filter(Boolean)[0];
+      note.innerHTML = `<span>✓ Card refund marked as sent${when ? ' on ' + escapeHtml(new Date(when).toLocaleDateString()) : ''}.</span>`;
+      note.style.display = 'flex';
+      noteRow.style.display = 'none';
+    }else{
+      note.style.display = 'none';
+      noteRow.style.display = 'none';
+    }
     document.getElementById('receiptModal').style.display = 'flex';
   }
   document.getElementById('receiptDoneBtn').addEventListener('click', () => {
@@ -5372,6 +5418,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const rows = refundState.rows.filter(r => r.take > 0);
     if(rows.length===0){ showToast('Nothing selected to refund', 'error'); return; }
     const orig = findTxn(refundState.txnId);
+    const rpay = (orig && orig.pay) || 'other';
     const txnId = uid('T');
     const receiptNo = nextReceiptNo();
     const at = new Date().toISOString();
@@ -5394,7 +5441,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         qty: -r.take,
         disc: 0,
         net: -amount,
-        pay: (orig && orig.pay) || 'other',
+        pay: rpay,
         tendered: null,
         change: null,
         // A refund is its own transaction, so it carries no card identifiers of
@@ -5402,6 +5449,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // Present and null rather than absent, so every sale line has one shape.
         sumupTxId: null,
         sumupCode: null,
+        // Cash comes out of the drawer as you hand it over, so it is done the
+        // moment it is recorded. A card refund is not: someone still has to go
+        // and do it on the reader, and until this says 'sent' the app keeps
+        // saying so. Refunds recorded before this build have no value here at
+        // all, which is why absent is not treated as 'due' — those were settled
+        // long ago and nagging about them now would be noise.
+        cardRefund: rpay === 'card' ? 'due' : null,
         kind: 'refund',
         refundOfLine: r.line.id || null,
         staff: currentStaff() || null,
@@ -5416,6 +5470,57 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     renderTill();
     showToast('Refund recorded — stock returned', 'success');
     openReceipt(txnId, {});
+  });
+
+  // ---- Card refunds still to send ----
+  // The app records a refund and puts the stock back, but it cannot move money:
+  // the card refund itself is done on the SumUp reader (Sales history, pick the
+  // transaction, Refund). Nothing here talks to SumUp, so the one useful thing
+  // the app can do is refuse to let you forget.
+  function cardRefundsDue(){
+    return txnGroups().filter(g => g.kind==='refund' && g.cardRefund==='due');
+  }
+
+  // The refund itself has no card details — they belong to the sale it came
+  // from. Walk back through refundOfLine to find the original sale's card slip
+  // code, so the reader's Sales history can be searched instead of scrolled.
+  function originalCardCode(g){
+    const back = g.lines.map(l => l.refundOfLine).filter(Boolean);
+    for(const lineId of back){
+      const origLine = sales.find(s => s.id === lineId);
+      if(!origLine) continue;
+      const origTxn = findTxn(lineTxn(origLine));
+      if(origTxn && origTxn.sumupCode) return origTxn.sumupCode;
+    }
+    return null;
+  }
+
+  function markCardRefundSent(txnId){
+    // Every line of the refund is stamped, not just the first: this is a state
+    // change made later rather than at creation, and stamping all of them means
+    // no single line has to be found again to read it back.
+    let touched = 0;
+    sales.forEach(s => {
+      if(lineTxn(s)===txnId && s.kind==='refund' && s.cardRefund==='due'){
+        s.cardRefund = 'sent';
+        s.cardRefundAt = new Date().toISOString();
+        touched++;
+      }
+    });
+    if(!touched) return;
+    saveSales();
+    renderSold();
+    openReceipt(txnId, {});
+    showToast('Marked as sent — the app has not moved any money', 'success');
+  }
+  document.getElementById('receiptCardRefundBtn').addEventListener('click', () => {
+    const g = findTxn(receiptTxnId); if(!g) return;
+    askConfirm(
+      'Card refund sent?',
+      `Only tick this once you have actually refunded ${money(-txnTotal(g))} on the card reader. It changes nothing at SumUp — it just stops the app reminding you.`,
+      'Yes, it is sent',
+      () => markCardRefundSent(g.id)
+    );
   });
 
   // ---- End-of-day (Z) report ----
@@ -5780,6 +5885,22 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('soldRevenue').textContent = money(round2(takingsToday));
     document.getElementById('soldUnits').textContent = txToday;
 
+    // Sitting above the list rather than only on the rows, because the whole
+    // point is to be seen without going looking — including days later, when
+    // the refund has scrolled well down the history.
+    const due = cardRefundsDue();
+    const dueBanner = document.getElementById('cardRefundBanner');
+    if(due.length){
+      const owed = round2(due.reduce((s,g) => s + -txnTotal(g), 0));
+      document.getElementById('cardRefundBannerText').innerHTML =
+        `💳 <b>${escapeHtml(money(owed))} still to refund on the card reader</b> — ` +
+        `${due.length} refund${due.length===1?'':'s'} recorded here but not yet sent back. ` +
+        `Tap ${due.length===1?'it':'them'} below for what to do.`;
+      dueBanner.style.display = 'flex';
+    }else{
+      dueBanner.style.display = 'none';
+    }
+
     const listEl  = document.getElementById('txnList');
     const emptyEl = document.getElementById('soldEmptyState');
     if(groups.length === 0){
@@ -5799,10 +5920,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         ? '#'+fmtReceiptNo(g.receiptNo)
         : escapeHtml((g.lines[0] && g.lines[0].name) || 'Sale');
       const refBadge = g.kind==='refund' ? ' <span class="refund-badge">refund</span>' : '';
+      const dueBadge = g.cardRefund==='due' ? ' <span class="due-badge">card refund due</span>' : '';
       return `
         <div class="txn-row" data-ti="${idx}">
           <div style="min-width:0;">
-            <div class="item-name">${label}${refBadge}</div>
+            <div class="item-name">${label}${refBadge}${dueBadge}</div>
             <div class="item-meta">${when.toLocaleDateString(undefined,{day:'numeric',month:'short'})} ${when.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})} · ${units} item${units===1?'':'s'} ${payIcon[g.pay]||''}</div>
           </div>
           <div class="cl-total" style="min-width:70px;">${money(total)}</div>

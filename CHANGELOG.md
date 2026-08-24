@@ -9,6 +9,33 @@ fixes.
 
 ---
 
+## v1.5.6 - 24 August 2026, 02:41
+
+### Added
+- **The app now tells you when a card refund still has to be sent back.** Refunding a card
+  sale records it and puts the stock back, but the app cannot move money — that part is
+  done on the card reader. Until now nothing said so, and a refund done at closing time
+  could quietly never reach the customer.
+- A **banner at the top of Sales** shows the total still owed and how many refunds it
+  covers. Each one is also marked **card refund due** in the list.
+- Opening the refund's receipt says what to do: the amount, and where to find it on the
+  reader — **Menu → Sales history → Refund**. If the original sale was taken through the
+  app it names the card slip code, so it can be searched for rather than scrolled to.
+- **✓ Mark card refund as sent** clears it, after a confirmation that says plainly this
+  changes nothing at SumUp.
+
+### Notes
+- **Cash refunds are not flagged**, because the money leaves the drawer as you hand it
+  over. Only card refunds leave something outstanding.
+- **Refunds recorded before this build are not flagged either.** They were settled long
+  ago, and raising them now would be noise rather than a reminder.
+- **Nothing here contacts SumUp.** The flag is the app's own note to itself, so ticking it
+  is a statement that you have done the refund on the reader, not an instruction to do it.
+- On the reader itself: refunds are possible for **90 days**, can be partial, go back to
+  the card that paid, and need enough un-withdrawn takings to cover them.
+
+---
+
 ## v1.5.5 - 24 August 2026, 02:05
 
 ### Added
