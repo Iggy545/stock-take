@@ -4,3 +4,4 @@
 # and the change register useless for spotting what actually moved.
 *.html text eol=lf
 *.md   text eol=lf
+*.js   text eol=lf
