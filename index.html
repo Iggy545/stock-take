@@ -3553,9 +3553,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.2';
+  const APP_VERSION = '1.5.3';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '00:55';
+  const BUILD_TIME  = '01:02';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3847,7 +3847,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
       const picked = selectMode && bulkPicked[bc];
       return `
-        <div class="item-row ${picked ? 'picked' : ''}" data-barcode="${bc}">
+        <div class="item-row ${picked ? 'picked' : ''}" data-barcode="${escapeAttr(bc)}">
           <div class="row-main">
             ${selectMode ? `<span class="pick">${picked ? '✓' : ''}</span>` : ''}
             ${thumbHtml(it)}
@@ -3883,9 +3883,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
+  // A photo is only ever a data: URI produced by reading a file on this device.
+  // Anything else arrived from somewhere it should not have — a synced record
+  // from another device, or a hand-edited backup file — so it is refused rather
+  // than put into a src attribute. Without this, a photo value of
+  //   x" onerror="...
+  // would break out of the attribute and run on every device showing the list.
+  function safePhotoSrc(v){
+    const s = String(v || '');
+    return /^data:image\//i.test(s) ? escapeAttr(s) : '';
+  }
   function thumbHtml(it){
-    if(it && it.photo){
-      return `<img class="thumb" src="${it.photo}" alt="">`;
+    const src = it ? safePhotoSrc(it.photo) : '';
+    if(src){
+      return `<img class="thumb" src="${src}" alt="">`;
     }
     return `<div class="thumb-empty">📦</div>`;
   }
@@ -4039,7 +4050,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     function render(){
       if(state.value){
-        preview.innerHTML = `<img src="${state.value}" alt="">`;
+        preview.innerHTML = `<img src="${safePhotoSrc(state.value)}" alt="">`;
         preview.style.display = 'block';
         remove.style.display = 'block';
       } else {
@@ -4348,7 +4359,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const folderTag = (q && itemFolder(it))
         ? ` · 📁 ${escapeHtml(itemFolder(it))}` : '';
       return `
-        <div class="sell-row ${out ? 'out' : ''}" data-sell="${bc}">
+        <div class="sell-row ${out ? 'out' : ''}" data-sell="${escapeAttr(bc)}">
           <div class="row-main">
             ${thumbHtml(it)}
             <div style="min-width:0;">

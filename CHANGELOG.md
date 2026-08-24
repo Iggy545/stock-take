@@ -9,6 +9,24 @@ fixes.
 
 ---
 
+## v1.5.3 - 24 August 2026, 01:02
+
+### Fixed
+- **A photo could carry code that ran on every device showing the stock list.** Item
+  photos were dropped straight into the page without checking them, so a photo value
+  crafted to look like `x" onerror="..."` escaped the tag it was in and ran. Photos are
+  now accepted only if they really are a picture stored on a device, and refused
+  otherwise. Barcodes are escaped the same way.
+
+### Notes
+- **Nothing suggests this was ever used**, and it could not be triggered by a customer.
+  It needed someone already signed in to the shop's own workspace, or a hand-edited
+  backup file being restored. Fixed because "only the people we trust could do it" is
+  not a safeguard, and a restored backup is the sort of thing that arrives by email.
+- Ordinary photos taken on the till or the phone are unaffected.
+
+---
+
 ## v1.5.2 - 24 August 2026, 00:55
 
 ### Changed
