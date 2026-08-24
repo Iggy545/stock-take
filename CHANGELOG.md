@@ -9,6 +9,45 @@ fixes.
 
 ---
 
+## v1.6.0 - 24 August 2026, 16:05
+
+### Added
+- **Set prices.** Two items that cost less bought together than bought apart. Scan or tap
+  both and the till spots the pair on its own, drops to the set price and shows a
+  **🎁 Set price** line so it is obvious it happened. Take one half back out and the
+  saving comes off again — nothing is remembered from the scan, the basket is re-checked
+  every time it changes.
+- **Set up on the item, under "Sold as a set."** Open one of the two items, pick the item
+  it is sold with, and give the price for the pair. The box shows what the two cost apart
+  and what the customer saves before you save it. Open the other half and it tells you
+  which item the set is defined on rather than offering a second box that could disagree
+  with the first.
+- Items in a set carry a **🎁 SET** badge in the stock list and in Quick Sell, so it is
+  visible before you get to the basket.
+- Receipts print the set saving as **set price** on its own line, separate from any
+  discount keyed in by hand.
+
+### Notes
+- **Payouts split the saving.** Where the two halves are by different makers, each one
+  carries its own share of the saving, in proportion to its price, instead of one of them
+  absorbing the lot. Sold, Z and the payout sheet all read the line net, so they agree to
+  the penny.
+- **Stock comes off both items**, one each, exactly as if they had been sold separately.
+  There is no third "set" product to count.
+- Buying two of each is two sets. Two of one and one of the other is one set plus one at
+  full price.
+- A line you have already discounted by hand sits out of set matching. Stacking a set
+  price on top of a keyed-in discount gives a total nobody at the counter can explain.
+- The set price applies before a whole-basket discount or a promo code, so a percentage
+  comes off the set price rather than off the higher separate prices.
+- If one half is refunded on its own, the customer gets back that half's share of the set
+  price, not the full shelf price.
+- A set price that is not actually a saving is refused when you save it, and ignored at
+  the till if prices later change to make it one.
+- Deleting an item clears any set it was part of.
+
+---
+
 ## v1.5.8 - 24 August 2026, 03:38
 
 ### Added

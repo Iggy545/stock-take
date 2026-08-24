@@ -126,6 +126,21 @@
   }
   .promo-actions button.pr-del{color:var(--danger);}
   #cartPromoRow{cursor:pointer;color:var(--moss-dark);}
+  #cartSetRow{color:var(--moss-dark);}
+
+  /* Set pricing (two items sold together for less) */
+  .set-box{
+    border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+    margin:4px 0 12px;background:var(--paper);
+  }
+  .set-box .set-sum{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45;}
+  .set-box select{margin-bottom:8px;}
+  .set-note{font-size:12px;color:var(--moss-dark);font-weight:600;line-height:1.45;}
+  .set-badge{
+    display:inline-block;font-size:10px;font-weight:700;color:var(--moss-dark);
+    border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:5px;
+    vertical-align:1px;
+  }
 
   /* Weekly CSV export reminder */
   .export-banner{
@@ -346,6 +361,7 @@
   .cart-line .cl-name{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .cart-line .cl-meta{font-size:12px;color:var(--muted);margin-top:1px;}
   .cart-line .cl-disc{font-size:11px;color:var(--clay-dark);font-weight:600;}
+  .cart-line .cl-set{font-size:11px;color:var(--moss-dark);font-weight:600;}
   .qty-ctrl{display:flex;align-items:center;gap:2px;}
   .qty-ctrl button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:17px;font-weight:700;color:var(--ink);cursor:pointer;padding:0;line-height:1;}
   .qty-ctrl span{min-width:26px;text-align:center;font-weight:700;font-size:14px;}
@@ -601,6 +617,7 @@
       <div class="cart-totals" id="cartTotals" style="display:none;">
         <div class="t-row"><span>Subtotal</span><span id="cartSubtotal">£0.00</span></div>
         <div class="t-row" id="cartDiscRow" style="display:none;"><span>Discounts</span><span id="cartDiscount">−£0.00</span></div>
+        <div class="t-row" id="cartSetRow" style="display:none;"><span id="cartSetLabel">🎁 Set price</span><span id="cartSetAmt">−£0.00</span></div>
         <div class="t-row" id="cartPromoRow" style="display:none;" title="Tap to remove"><span id="cartPromoLabel">🎟 Promo</span><span id="cartPromoAmt">−£0.00</span></div>
         <div class="t-row grand"><span>Total</span><span id="cartTotal">£0.00</span></div>
       </div>
@@ -1068,6 +1085,21 @@
 
     <label>Counted so far (this stock take)</label>
     <input type="number" id="editItemCounted" inputmode="numeric">
+
+    <label>Sold as a set</label>
+    <div class="set-box">
+      <div id="editSetPartnerNote" class="set-note" style="display:none;"></div>
+      <div id="editSetEditor">
+        <select id="editSetWith">
+          <option value="">Not part of a set</option>
+        </select>
+        <input type="number" id="editSetPrice" inputmode="decimal" step="0.01" min="0" placeholder="Price for the pair (£)" style="display:none;">
+        <div class="set-sum" id="editSetSummary">
+          Pick the item this one is sold with, then give the price for the two together.
+          When both are in the basket the till applies it on its own.
+        </div>
+      </div>
+    </div>
     <div class="barcode-preview" id="editBarcodePreview" style="display:block;">
       <svg id="editBarcodeSvg"></svg>
       <div class="label-caption" id="editBarcodeCaption"></div>
@@ -3571,9 +3603,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.8';
+  const APP_VERSION = '1.6.0';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '03:38';
+  const BUILD_TIME  = '16:05';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3844,6 +3876,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     const nameSort = (a,b) => items[a].name.localeCompare(items[b].name);
 
+    const setOf = {};
+    setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
+
     const rowHtml = bc => {
       const it = items[bc];
       const counted = it.counted || 0;
@@ -3870,7 +3905,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             ${selectMode ? `<span class="pick">${picked ? '✓' : ''}</span>` : ''}
             ${thumbHtml(it)}
             <div style="min-width:0;">
-              <div class="item-name">${escapeHtml(it.name)}</div>
+              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}</div>
               <div class="item-meta">Made by ${escapeHtml(it.maker||'—')} · Expected ${it.qty}${folderTag}</div>
               <div class="item-price">${priceLine}</div>
               <div class="expected">${diffLabel}</div>
@@ -4232,6 +4267,103 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return true;
   }
 
+  // ---- Set pricing ----
+  // Two items that cost less bought together than bought apart. The rule lives
+  // on ONE of the two items, as it.set = { with:['OTHERBARCODE'], price: 25 },
+  // because items are the only thing that syncs between tills -- a separate
+  // list of rules would have to be retyped on every device, the way promo
+  // codes are now.
+  //
+  // Nothing is detected at scan time. The basket is re-matched on every change
+  // in cartFigures(), so a set applies however the items got there (scanned,
+  // tapped in Quick Sell, or the +/- buttons) and, just as important, takes
+  // itself back off again the moment one half is removed.
+
+  function setMembers(bc){
+    const s = items[bc] && items[bc].set;
+    if(!s || !Array.isArray(s.with) || !s.with.length) return null;
+    const members = [bc].concat(s.with.filter(x => x && x !== bc));
+    if(members.length < 2) return null;                         // a set of one is just a price
+    if(new Set(members).size !== members.length) return null;   // no duplicates
+    if(members.some(m => !items[m])) return null;               // partner deleted
+    return members;
+  }
+
+  // Every usable rule in the stock list.
+  function setRules(){
+    const out = [];
+    Object.keys(items).forEach(bc => {
+      const members = setMembers(bc);
+      if(!members) return;
+      const price = round2(Number(items[bc].set.price)||0);
+      if(price <= 0) return;
+      out.push({ owner: bc, members: members, price: price });
+    });
+    return out;
+  }
+
+  // The rule a given item takes part in, whichever side it is defined on.
+  function setRuleFor(bc){
+    return setRules().find(r => r.members.indexOf(bc) !== -1) || null;
+  }
+
+  function setRuleName(r){
+    return r.members.map(m => (items[m] ? items[m].name : m)).join(' + ');
+  }
+
+  // Match the rules against a basket. Returns a per-line saving (parallel to
+  // lines) plus a description of what was applied, for the till display.
+  //
+  // The saving is worked out from the prices ON THE LINES, not from the item
+  // records: a line captures its price when it goes in the basket, so that is
+  // what the customer is actually being charged.
+  function setMatches(lines){
+    const disc = lines.map(() => 0);
+    const applied = [];
+    if(!lines.length) return { disc: disc, applied: applied };
+
+    const idxOf = {};
+    lines.forEach((l,i) => { if(idxOf[l.barcode]===undefined) idxOf[l.barcode] = i; });
+    // A line somebody has already discounted by hand sits out. Stacking a set
+    // price on top of a keyed-in discount gives a total nobody at the counter
+    // can explain.
+    const avail = lines.map(l => (l.disc && l.disc.value) ? 0 : l.qty);
+
+    const rules = setRules().map(r => {
+      const idxs = r.members.map(m => idxOf[m]);
+      if(idxs.some(i => i===undefined)) return null;
+      const full = round2(idxs.reduce((t,i) => t + (Number(lines[i].price)||0), 0));
+      const saving = round2(full - r.price);
+      if(saving <= 0) return null;    // set price isn't a saving here -- ignore it
+      return { rule: r, idxs: idxs, full: full, saving: saving };
+    }).filter(Boolean);
+
+    // Biggest saving first, so an item that belongs to two sets resolves the
+    // same way every time instead of depending on stock-list order.
+    rules.sort((a,b) => b.saving - a.saving);
+
+    rules.forEach(m => {
+      const n = Math.min.apply(null, m.idxs.map(i => avail[i]));
+      if(n <= 0) return;
+      m.idxs.forEach(i => { avail[i] -= n; });
+
+      // Split the saving across the members in proportion to their price, so
+      // each maker's payout carries its own share of it rather than one of
+      // them absorbing the lot. Last member takes the rounding remainder.
+      const total = round2(m.saving * n);
+      let alloc = 0;
+      m.idxs.forEach((i,k) => {
+        let share;
+        if(k === m.idxs.length-1){ share = round2(total - alloc); }
+        else { share = round2(total * ((Number(lines[i].price)||0) / (m.full||1))); alloc = round2(alloc + share); }
+        disc[i] = round2(disc[i] + share);
+      });
+      applied.push({ name: setRuleName(m.rule), count: n, saving: total, idxs: m.idxs });
+    });
+
+    return { disc: disc, applied: applied };
+  }
+
   function lineDiscAmount(l){
     const gross = l.qty * l.price;
     if(!l.disc || !l.disc.value) return 0;
@@ -4241,10 +4373,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return round2(d);
   }
   function cartFigures(){
-    let subtotal=0, lineDiscs=0;
-    cart.lines.forEach(l => { subtotal += l.qty*l.price; lineDiscs += lineDiscAmount(l); });
+    const sm = setMatches(cart.lines);
+    let subtotal=0, lineDiscs=0, setDisc=0;
+    cart.lines.forEach((l,i) => {
+      subtotal += l.qty*l.price;
+      lineDiscs += lineDiscAmount(l);
+      setDisc  += sm.disc[i];
+    });
     subtotal = round2(subtotal);
-    const afterLines = subtotal - lineDiscs;
+    setDisc = round2(setDisc);
+    const afterLines = subtotal - lineDiscs - setDisc;
     let basketDisc = 0;
     if(cart.disc && cart.disc.value){
       basketDisc = (cart.disc.type==='pct')
@@ -4273,8 +4411,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       subtotal: subtotal,
       basketDisc: basketDisc,
       promoDisc: promoDisc,
-      otherDisc: round2(lineDiscs + basketDisc),   // discounts excluding the promo
-      discounts: round2(lineDiscs + basketDisc + promoDisc),
+      setDisc: setDisc,          // total taken off by set prices
+      setLine: sm.disc,          // that total, per basket line
+      sets: sm.applied,          // which sets matched, for the till display
+      otherDisc: round2(lineDiscs + basketDisc),   // keyed-in discounts only
+      discounts: round2(lineDiscs + setDisc + basketDisc + promoDisc),
       total: round2(afterBasket - promoDisc)
     };
   }
@@ -4291,14 +4432,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       emptyEl.style.display='none'; totalsEl.style.display='block';
       linesEl.innerHTML = cart.lines.map((l,i) => {
         const d = lineDiscAmount(l);
-        const net = round2(l.qty*l.price - d);
+        const sd = f.setLine[i] || 0;
+        const net = round2(l.qty*l.price - d - sd);
         const discNote = d>0 ? `<div class="cl-disc">−${money(d)} discount</div>` : '';
+        const setNote = sd>0 ? `<div class="cl-set">🎁 −${money(sd)} set price</div>` : '';
         return `
           <div class="cart-line">
             <div class="cl-info" data-edit="${i}">
               <div class="cl-name">${escapeHtml(l.name)}</div>
               <div class="cl-meta">${money(l.price)} each · tap for discount</div>
               ${discNote}
+              ${setNote}
             </div>
             <div class="qty-ctrl">
               <button type="button" data-minus="${i}">−</button>
@@ -4330,6 +4474,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const dr = document.getElementById('cartDiscRow');
     dr.style.display = f.otherDisc>0 ? 'flex' : 'none';
     document.getElementById('cartDiscount').textContent = '−'+money(f.otherDisc);
+    const sr = document.getElementById('cartSetRow');
+    sr.style.display = f.setDisc>0 ? 'flex' : 'none';
+    if(f.setDisc>0){
+      // Name the set when there is only one, so staff can see at a glance which
+      // rule fired; more than one and the count is the useful bit.
+      document.getElementById('cartSetLabel').textContent = (f.sets.length===1)
+        ? '🎁 ' + f.sets[0].name + (f.sets[0].count>1 ? ' ×'+f.sets[0].count : '')
+        : '🎁 Set prices (' + f.sets.length + ')';
+      document.getElementById('cartSetAmt').textContent = '−'+money(f.setDisc);
+    }
     const pr = document.getElementById('cartPromoRow');
     if(cart.promo && cart.lines.length){
       pr.style.display = 'flex';
@@ -4376,6 +4530,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       return items[a].name.localeCompare(items[b].name);
     };
 
+    const setOf = {};
+    setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
+
     const rowHtml = bc => {
       const it = items[bc];
       const avail = cartOnHand(bc);
@@ -4388,7 +4545,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           <div class="row-main">
             ${thumbHtml(it)}
             <div style="min-width:0;">
-              <div class="item-name">${escapeHtml(it.name)}</div>
+              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}</div>
               <div class="item-meta">${money(price)} · ${out ? 'None left' : avail + ' available'}${folderTag}</div>
             </div>
           </div>
@@ -5133,7 +5290,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // lines in proportion to their value, so each line's net is honest and
     // reports add up to the penny.
     const basketWide = round2(f.basketDisc + f.promoDisc);
-    const netsBefore = cart.lines.map(l => l.qty*l.price - lineDiscAmount(l));
+    const netsBefore = cart.lines.map((l,i) => l.qty*l.price - lineDiscAmount(l) - (f.setLine[i]||0));
     const sumBefore = netsBefore.reduce((a,b) => a+b, 0) || 1;
     let allocated = 0;
     const shares = cart.lines.map((l,i) => {
@@ -5145,7 +5302,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
 
     cart.lines.forEach((l,i) => {
-      const disc = round2(lineDiscAmount(l) + shares[i]);
+      // The set saving is folded into the line's own discount, so every report
+      // downstream -- maker payouts, Z, receipts, refunds -- reads it off the
+      // line net without needing to know sets exist.
+      const setShare = round2(f.setLine[i]||0);
+      const disc = round2(lineDiscAmount(l) + setShare + shares[i]);
       const net  = round2(l.qty*l.price - disc);
       // take the stock off the shelf
       if(items[l.barcode]){
@@ -5172,6 +5333,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         sumupTxId: (i===0 && card && card.txId) ? card.txId : null,
         sumupCode: (i===0 && card && card.code) ? card.code : null,
         cardRefund: null,
+        // How much of this line's discount came from a set price, so the
+        // receipt can call it that instead of a plain discount.
+        setDisc: setShare > 0 ? setShare : null,
         kind: 'sale',
         refundOfLine: null,
         promo: (cart.promo && f.promoDisc>0) ? cart.promo.code : null,
@@ -5268,7 +5432,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const q = lineQty(l), net = lineNet(l);
       h += `<div class="r-line"><span class="r-l">${escapeHtml(l.name)}${Math.abs(q)!==1 ? ' ×'+Math.abs(q) : ''}</span><span>${money(net)}</span></div>`;
       if(Math.abs(q)!==1) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;${money(Number(l.price)||0)} each</span><span></span></div>`;
-      if(Number(l.disc) > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;discount</span><span>−${money(l.disc)}</span></div>`;
+      const sd = Number(l.setDisc) || 0;
+      if(sd > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;set price</span><span>−${money(sd)}</span></div>`;
+      const od = round2((Number(l.disc)||0) - sd);
+      if(od > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;discount</span><span>−${money(od)}</span></div>`;
     });
 
     h += `<hr>`;
@@ -5320,7 +5487,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     g.lines.forEach(l => {
       const q = lineQty(l);
       out.push(pad(l.name + (Math.abs(q)!==1 ? ' x'+Math.abs(q) : ''), money(lineNet(l))));
-      if(Number(l.disc) > 0) out.push(pad('  discount', '-'+money(l.disc)));
+      const sd = Number(l.setDisc) || 0;
+      if(sd > 0) out.push(pad('  set price', '-'+money(sd)));
+      const od = round2((Number(l.disc)||0) - sd);
+      if(od > 0) out.push(pad('  discount', '-'+money(od)));
     });
     out.push('-'.repeat(W));
     out.push(pad(g.kind==='refund' ? 'REFUNDED' : 'TOTAL', money(txnTotal(g))));
@@ -5504,6 +5674,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // all, which is why absent is not treated as 'due' — those were settled
         // long ago and nagging about them now would be noise.
         cardRefund: rpay === 'card' ? 'due' : null,
+        setDisc: null,
         kind: 'refund',
         refundOfLine: r.line.id || null,
         staff: currentStaff() || null,
@@ -7533,6 +7704,55 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- Edit modal ----
+  // ---- Set pricing: the editor on the item screen ----
+  // The rule is defined on one of the two items. Open the other one and you get
+  // a read-only note pointing back at it, rather than a second box that could
+  // disagree with the first.
+  function fillSetPartnerOptions(selfBc, selected){
+    const sel = document.getElementById('editSetWith');
+    const opts = Object.keys(items)
+      .filter(bc => bc !== selfBc)
+      .sort((a,b) => items[a].name.localeCompare(items[b].name))
+      .map(bc => {
+        const price = Number(items[bc].price)||0;
+        const label = items[bc].name + (price>0 ? ' — ' + money(price) : '');
+        return '<option value="' + escapeAttr(bc) + '">' + escapeHtml(label) + '</option>';
+      }).join('');
+    sel.innerHTML = '<option value="">Not part of a set</option>' + opts;
+    sel.value = selected || '';
+    if(selected && sel.value !== selected) sel.value = '';   // partner has gone
+  }
+
+  function refreshSetEditor(){
+    const withBc = document.getElementById('editSetWith').value;
+    const priceEl = document.getElementById('editSetPrice');
+    const sumEl = document.getElementById('editSetSummary');
+    priceEl.style.display = withBc ? 'block' : 'none';
+    if(!withBc){
+      sumEl.textContent = 'Pick the item this one is sold with, then give the price for the two together. '
+                        + 'When both are in the basket the till applies it on its own.';
+      return;
+    }
+    // Use the price being typed in this modal, not the saved one -- they may be
+    // changing both at once.
+    const mine  = parseFloat(document.getElementById('editItemPrice').value) || 0;
+    const other = Number(items[withBc] ? items[withBc].price : 0) || 0;
+    const full  = round2(mine + other);
+    const setP  = parseFloat(priceEl.value);
+    let msg = 'Apart: ' + money(full) + ' (' + money(mine) + ' + ' + money(other) + ').';
+    if(setP > 0){
+      if(setP >= full) msg += ' A set price of ' + money(setP) + ' is not a saving, so the till would ignore it.';
+      else msg += ' Together: ' + money(setP) + ' — saving ' + money(round2(full - setP)) + '.';
+    } else {
+      msg += ' Enter what the two cost together.';
+    }
+    sumEl.textContent = msg;
+  }
+
+  document.getElementById('editSetWith').addEventListener('change', refreshSetEditor);
+  document.getElementById('editSetPrice').addEventListener('input', refreshSetEditor);
+  document.getElementById('editItemPrice').addEventListener('input', refreshSetEditor);
+
   function openEditModal(barcode){
     currentEditBarcode = barcode;
     const it = items[barcode];
@@ -7544,6 +7764,27 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('editItemPrice').value = (it.price !== undefined && it.price !== null) ? it.price : '';
     editPhoto.set(it.photo || '');
     document.getElementById('editItemCounted').value = it.counted || 0;
+
+    // Set pricing: own rule, partner in someone else's rule, or neither
+    const owned = setMembers(barcode) ? it.set : null;
+    const partnerRule = owned ? null : setRules().find(r => r.owner !== barcode && r.members.indexOf(barcode) !== -1);
+    const noteEl = document.getElementById('editSetPartnerNote');
+    const edEl = document.getElementById('editSetEditor');
+    if(partnerRule){
+      edEl.style.display = 'none';
+      noteEl.style.display = 'block';
+      noteEl.textContent = '🎁 Sold as a set: ' + setRuleName(partnerRule)
+        + ' for ' + money(partnerRule.price) + '. The set is set up on "'
+        + (items[partnerRule.owner] ? items[partnerRule.owner].name : partnerRule.owner)
+        + '" — open that item to change or remove it.';
+    } else {
+      noteEl.style.display = 'none';
+      edEl.style.display = 'block';
+      fillSetPartnerOptions(barcode, owned ? owned.with[0] : '');
+      document.getElementById('editSetPrice').value = owned ? owned.price : '';
+      refreshSetEditor();
+    }
+
     document.getElementById('editItemModal').style.display = 'flex';
     // render barcode now, while visible, so getBBox works on all browsers
     setTimeout(() => {
@@ -7554,6 +7795,32 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   document.getElementById('saveEditItem').addEventListener('click', () => {
     const it = items[currentEditBarcode];
+
+    // Work the set rule out first and bail on a bad one, so a rejected save
+    // leaves the item exactly as it was rather than half-changed.
+    let newSet = null, clearSet = false;
+    const setEditorOpen = document.getElementById('editSetEditor').style.display !== 'none';
+    if(setEditorOpen){
+      const withBc = document.getElementById('editSetWith').value;
+      if(!withBc){ clearSet = true; }
+      else {
+        const setP = parseFloat(document.getElementById('editSetPrice').value);
+        const mine = parseFloat(document.getElementById('editItemPrice').value) || 0;
+        const full = round2(mine + (Number(items[withBc] ? items[withBc].price : 0) || 0));
+        if(!(setP > 0)){ showToast('Give the price for the two together', 'error'); return; }
+        if(setP >= full){
+          showToast('A set price has to be under ' + money(full) + ' — what the two cost apart', 'error');
+          return;
+        }
+        const clash = setRules().find(r => r.owner !== currentEditBarcode && r.members.indexOf(withBc) !== -1);
+        if(clash){
+          showToast(items[withBc].name + ' is already in a set (' + setRuleName(clash) + ')', 'error');
+          return;
+        }
+        newSet = { with: [withBc], price: round2(setP) };
+      }
+    }
+
     it.name = document.getElementById('editItemName').value.trim() || it.name;
     it.folder = normFolder(document.getElementById('editItemFolder').value);
     it.qty = parseInt(document.getElementById('editItemQty').value,10) || 0;
@@ -7561,9 +7828,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     it.price = parseFloat(document.getElementById('editItemPrice').value) || 0;
     it.photo = editPhoto.value;
     it.counted = parseInt(document.getElementById('editItemCounted').value,10) || 0;
+    if(newSet) it.set = newSet;
+    else if(clearSet) delete it.set;
     saveItems();
     document.getElementById('editItemModal').style.display = 'none';
     renderList(document.getElementById('searchBox').value);
+    renderTill();
     showToast('Item updated', 'success');
   });
   document.getElementById('deleteItemBtn').addEventListener('click', () => {
@@ -7575,9 +7845,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       'Delete',
       () => {
         delete items[bc];
+        // Drop any set rule that pointed at it, on either side
+        Object.keys(items).forEach(k => {
+          const st = items[k].set;
+          if(st && Array.isArray(st.with) && st.with.indexOf(bc) !== -1) delete items[k].set;
+        });
         saveItems();
         document.getElementById('editItemModal').style.display = 'none';
         renderList(document.getElementById('searchBox').value);
+        renderTill();
         showToast('Item deleted', 'success');
       }
     );
@@ -7691,6 +7967,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           counted: parseInt(raw.counted,10) || 0,
           addedAt: new Date().toISOString()
         };
+        // Carry a set rule across a restore; dangling ones are ignored by
+        // setMembers() until the partner is restored too.
+        if(raw.set && Array.isArray(raw.set.with) && Number(raw.set.price) > 0){
+          items[bc].set = { with: raw.set.with.map(String), price: Number(raw.set.price) };
+        }
         added++;
       });
       if(added && !saveItems()) return;
