@@ -9,6 +9,28 @@ fixes.
 
 ---
 
+## v1.5.7 - 24 August 2026, 03:12
+
+### Added
+- **A refund receipt now names the sale it refunds.** A refund is given its own receipt
+  number, so on paper it was a stranger to the sale it reversed — the customer held two
+  slips with nothing linking them. It now prints **Refund of #VQ-0042** under its own
+  number.
+- **A card sale receipt now prints the card reference.** The card slip has always carried
+  our receipt number, so the slip could find the sale. This makes it work the other way
+  too, which is the direction that matters when a customer arrives holding the till
+  receipt and the payment has to be found on the reader.
+
+### Notes
+- Both appear on the printed receipt and the shared text one.
+- **The card reference only exists for card sales taken through the app** from v1.5.5
+  onwards, once the payment service has been redeployed. Sales without one simply omit
+  the line rather than printing a blank.
+- **The refund cross-reference works on any refund** that recorded which sale it came
+  from, so it applies to existing refunds too, not only new ones.
+
+---
+
 ## v1.5.6 - 24 August 2026, 02:41
 
 ### Added
