@@ -3571,9 +3571,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.7';
+  const APP_VERSION = '1.5.8';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '03:12';
+  const BUILD_TIME  = '03:38';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5251,12 +5251,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // stranger to the sale it reverses. Name that sale, or the customer's two
     // slips have nothing linking them.
     const orig = originalTxnOf(g);
+    // The refund's own date and time are already at the top. This is the sale's,
+    // which is what actually finds it again on the reader — its Sales history is
+    // ordered by when the payment was taken, not by when it was given back.
+    const origWhen = (orig && orig.at) ? new Date(orig.at) : null;
 
     let h = `<div class="r-head">
       <div class="r-shop">${escapeHtml(shop)}</div>
       <div>${when.toLocaleDateString()} ${when.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}</div>
       ${g.receiptNo ? `<div>Receipt #${fmtReceiptNo(g.receiptNo)}${isRefund?' — REFUND':''}</div>` : (isRefund?'<div>REFUND</div>':'')}
       ${(orig && orig.receiptNo) ? `<div>Refund of #${fmtReceiptNo(orig.receiptNo)}</div>` : ''}
+      ${origWhen ? `<div>sold ${origWhen.toLocaleDateString()} ${origWhen.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}</div>` : ''}
     </div><hr>`;
 
     g.lines.forEach(l => {
@@ -5286,7 +5291,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // the app have one; everything else silently omits the line.
     if(g.sumupCode) h += `<div class="r-line"><span class="r-l">Card ref</span><span>${escapeHtml(g.sumupCode)}</span></div>`;
     const servedBy = (g.lines.find(l => l.staff)||{}).staff;
-    if(servedBy) h += `<div class="r-line"><span class="r-l">Served by</span><span>${escapeHtml(servedBy)}</span></div>`;
+    const staffLabel = isRefund ? 'Refunded by' : 'Served by';
+    if(servedBy) h += `<div class="r-line"><span class="r-l">${staffLabel}</span><span>${escapeHtml(servedBy)}</span></div>`;
     if(g.tendered!=null){
       h += `<div class="r-line"><span class="r-l">Cash</span><span>${money(g.tendered)}</span></div>`;
       h += `<div class="r-line"><span class="r-l">Change</span><span>${money(g.change||0)}</span></div>`;
@@ -5305,6 +5311,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(g.receiptNo) out.push('Receipt #' + fmtReceiptNo(g.receiptNo) + (g.kind==='refund' ? ' REFUND' : ''));
     const orig = originalTxnOf(g);
     if(orig && orig.receiptNo) out.push('Refund of #' + fmtReceiptNo(orig.receiptNo));
+    if(orig && orig.at){
+      const ow = new Date(orig.at);
+      out.push('sold ' + ow.toLocaleDateString() + ' ' +
+               ow.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}));
+    }
     out.push('-'.repeat(W));
     g.lines.forEach(l => {
       const q = lineQty(l);
@@ -5314,6 +5325,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     out.push('-'.repeat(W));
     out.push(pad(g.kind==='refund' ? 'REFUNDED' : 'TOTAL', money(txnTotal(g))));
     if(g.pay) out.push(pad('Paid by', g.pay));
+    // The printed receipt has always named the staff member; the shared one
+    // never did. Same line, same wording, so the two agree.
+    const servedBy = (g.lines.find(l => l.staff)||{}).staff;
+    if(servedBy) out.push(pad(g.kind==='refund' ? 'Refunded by' : 'Served by', servedBy));
     if(g.sumupCode) out.push(pad('Card ref', g.sumupCode));
     if(g.tendered!=null){ out.push(pad('Cash', money(g.tendered))); out.push(pad('Change', money(g.change||0))); }
     const foot = getShopFooter();
@@ -5344,8 +5359,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const noteRow = document.getElementById('receiptCardRefundRow');
     if(g.kind==='refund' && g.cardRefund==='due'){
       const code = originalCardCode(g);
+      // The reader lists payments by when they were taken, so the sale's own
+      // time is the thing that finds it — with or without a code to search for.
+      const oTxn = originalTxnOf(g);
+      const oWhen = (oTxn && oTxn.at) ? new Date(oTxn.at) : null;
+      const taken = oWhen
+        ? `, taken <b>${escapeHtml(oWhen.toLocaleDateString())} ${escapeHtml(oWhen.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}))}</b>`
+        : '';
       note.innerHTML = `<span>💳 <b>${escapeHtml(money(-txnTotal(g)))} still to refund on the card reader.</b>
-        Menu → Sales history → ${code ? 'card slip <b>'+escapeHtml(code)+'</b>' : 'find the original sale'}
+        Menu → Sales history → ${code ? 'card slip <b>'+escapeHtml(code)+'</b>' : 'find the original sale'}${taken}
         → Refund. The stock is already back and the books are right — only the money is outstanding.</span>`;
       note.style.display = 'flex';
       noteRow.style.display = 'flex';

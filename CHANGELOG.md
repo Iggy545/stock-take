@@ -9,6 +9,29 @@ fixes.
 
 ---
 
+## v1.5.8 - 24 August 2026, 03:38
+
+### Added
+- **A refund receipt now says when the original sale was taken**, on the line under
+  "Refund of #VQ-0042". The refund's own date and time were already at the top, but it is
+  the *sale's* time that finds the payment again on the card reader, because the reader
+  lists payments by when they were taken rather than when they were given back.
+- **A refund now names who processed it.** The printed receipt called this "Served by",
+  which is the wrong word for handing money back — on a refund it now reads **Refunded
+  by**.
+- The same detail is on the on-screen note that tells you what to do at the reader, so
+  the sale can be found whether or not there is a card reference to search for.
+
+### Fixed
+- **The shared receipt never named the staff member at all.** The printed one always has.
+  Both now carry it, with the same wording.
+
+### Notes
+- Only shows where a name was recorded on the sale. If nobody was signed in at the till,
+  the line is left off rather than printed empty.
+
+---
+
 ## v1.5.7 - 24 August 2026, 03:12
 
 ### Added
