@@ -255,6 +255,55 @@
   .item-row.picked{background:rgba(14,165,233,.07);}
   .icon{font-size:18px;line-height:1;}
 
+  /* Website — items that also sell on the shop's website. Nothing here talks to
+     the website; it keeps track of what the website has been told, so the list
+     of what still needs changing over there is never guesswork. */
+  .web-banner{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    background:var(--panel);border:1px solid var(--clay);border-radius:12px;
+    padding:10px 12px;margin-bottom:12px;font-size:13px;font-weight:600;
+    color:var(--ink);cursor:pointer;font-family:inherit;
+  }
+  .web-banner .grow{flex:1;min-width:0;}
+  .web-banner .n{
+    background:var(--clay);color:#fff;border-radius:8px;
+    padding:2px 9px;font-size:13px;font-weight:700;flex:none;
+  }
+  .web-banner .sub{font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;}
+  .web-badge{
+    display:inline-block;font-size:10px;font-weight:700;color:var(--clay-dark);
+    border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:5px;
+    vertical-align:1px;
+  }
+  .web-badge.due{background:var(--clay);color:#fff;border-color:var(--clay);}
+  .web-row{
+    display:flex;align-items:center;gap:10px;
+    padding:11px 4px;border-bottom:1px solid var(--line);
+  }
+  .web-row:last-child{border-bottom:none;}
+  .web-row .what{flex:1;min-width:0;}
+  .web-row .nm{font-size:14px;font-weight:600;}
+  .web-row .act{font-size:12px;margin-top:2px;line-height:1.4;}
+  .web-row .act.gone{color:var(--danger);font-weight:600;}
+  .web-row .act.update{color:var(--clay-dark);}
+  .web-row .act.add{color:var(--moss-dark);}
+  .web-row .act.remove{color:var(--muted);}
+  .web-row .tick{
+    flex:none;width:38px;height:32px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--moss-dark);
+    font-size:15px;font-weight:700;
+  }
+  .web-list{max-height:52vh;overflow-y:auto;margin:4px 0 12px;}
+  .web-box{
+    border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:4px;
+  }
+  .web-box label{margin-top:10px;}
+  .web-box .state{font-size:12px;color:var(--muted);line-height:1.45;margin-top:8px;}
+  .web-check{
+    display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .web-check input{width:19px;height:19px;margin:0;flex:none;}
+
   .value-summary{
     display:flex;justify-content:space-between;align-items:center;
     background:var(--ink);color:var(--paper);
@@ -589,6 +638,14 @@
       <button type="button" id="bulkDeleteBtn" class="bulk-danger">🗑 Delete</button>
       <button type="button" id="bulkDoneBtn">Done</button>
     </div>
+    <button type="button" class="web-banner" id="webBanner" style="display:none;">
+      <span class="icon">🌐</span>
+      <span class="grow">
+        <span id="webBannerText">Website needs updating</span>
+        <span class="sub" id="webBannerSub">Tap to see what has changed since it was last set</span>
+      </span>
+      <span class="n" id="webBannerCount">0</span>
+    </button>
     <div class="value-summary" id="valueSummary">
       <div>
         <div class="value-label">Stock on hand value</div>
@@ -802,6 +859,23 @@
 
 <div id="toast" class="toast"></div>
 
+<!-- What still needs changing on the website. Nothing here talks to the website:
+     the till records what the website was last told, and this is the difference. -->
+<div class="modal-overlay" id="webTodoModal" style="display:none;">
+  <div class="modal">
+    <h2>Website needs updating</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 10px;">
+      Make each change on the website, then tick it off here. Ticking only records that the
+      website now matches — it does not change the website itself.
+    </p>
+    <div class="web-list" id="webTodoList"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="webTodoClose">Close</button>
+      <button class="btn btn-primary" id="webTodoAllBtn">Tick everything off</button>
+    </div>
+  </div>
+</div>
+
 <!-- Custom confirm modal (browser confirm() is blocked in embedded views) -->
 <div class="modal-overlay" id="confirmModal" style="display:none;">
   <div class="modal">
@@ -927,6 +1001,13 @@
     <label>Made by</label>
     <input type="text" id="bulkMakerInput" placeholder="Leave blank to keep current" autocomplete="off">
     <div class="folder-hint">Type just - to clear the made-by name.</div>
+    <label>Sells on the website</label>
+    <select id="bulkWebInput">
+      <option value="">Leave as it is</option>
+      <option value="on">Yes — these sell online</option>
+      <option value="off">No — shop only</option>
+    </select>
+    <div class="folder-hint">This is how to mark a whole folder at once. Nothing is sent anywhere — it only decides what turns up on the website list.</div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="bulkEditCancel">Cancel</button>
       <button class="btn btn-primary" id="bulkEditApply">Apply</button>
@@ -1093,6 +1174,20 @@
 
     <label>Counted so far (this stock take)</label>
     <input type="number" id="editItemCounted" inputmode="numeric">
+
+    <label>Website</label>
+    <div class="web-box">
+      <label class="web-check" for="editWebOn" style="margin:0;">
+        <input type="checkbox" id="editWebOn">
+        <span>This one sells on the website too</span>
+      </label>
+      <div id="editWebMore" style="display:none;">
+        <label>Description for the website (optional)</label>
+        <textarea id="editWebDesc" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."
+          style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);resize:vertical;"></textarea>
+      </div>
+      <div class="state" id="editWebState"></div>
+    </div>
 
     <label>Sold as a set</label>
     <div class="set-box">
@@ -3621,9 +3716,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.7.1';
+  const APP_VERSION = '1.8.0';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '22:47';
+  const BUILD_TIME  = '23:05';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3749,6 +3844,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     try{
       reconcilePhotos();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(strippedForStorage()));
+      // Every change to the stock passes through here — a sale, a refund, an
+      // edit, a record arriving over sync — so this is the one place that keeps
+      // the website list honest without every caller having to remember.
+      try{ renderWebBanner(); }catch(e){}
       return true;
     }catch(e){
       // With photos in IndexedDB this should be very rare now.
@@ -3822,6 +3921,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     var o = src || items;
     return Object.keys(o).filter(function(bc){ return o[bc] && o[bc].photo; }).length;
   }
+
 
   // Rough estimate of how much space the photos are using.
   function storageUsedKb(){
@@ -3914,6 +4014,221 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(e.target === document.getElementById('confirmModal')) closeConfirm();
   });
 
+  /* ===================== The website list =====================
+     The shop sells the same shelf twice: at the counter and on the website. The
+     till is the only place that knows what is actually left, and nothing here
+     can reach the website to tell it — so instead of trying, each item carries
+     what the website was last TOLD:
+
+       it.web      1 when the item sells online
+       it.webQty   the number the website is showing (absent = never listed)
+       it.webPrice the price the website is showing
+       it.webDesc  a longer description, for when there is a website of our own
+
+     What still needs doing over there is then the difference between those and
+     the real figures — derived every time, never a list that can drift out of
+     step with the stock. Ticking an item off means "the website matches now". */
+
+  function webListed(it){ return it && it.webQty !== undefined && it.webQty !== null; }
+
+  // Which items are waiting on a change over there. Worked out once per render
+  // rather than per row — with several hundred items, asking the question for
+  // every row would mean walking the whole list several hundred times.
+  var webDue = {};
+  function refreshWebDue(){
+    webDue = {};
+    webTodos().forEach(t => { webDue[t.bc] = 1; });
+    return webDue;
+  }
+
+  // The 🌐 on a row in the stock list. Solid when that item is one of the ones
+  // still waiting to be changed on the website.
+  function webBadgeHtml(bc){
+    const it = items[bc];
+    if(!it || (!it.web && !webListed(it))) return '';
+    const due = !!webDue[bc];
+    return `<span class="web-badge${due ? ' due' : ''}" title="${due ? 'Needs changing on the website' : 'Sells on the website'}">🌐</span>`;
+  }
+
+  function webTodos(){
+    const out = [];
+    Object.keys(items).forEach(bc => {
+      const it = items[bc];
+      if(!it) return;
+      const listed = webListed(it);
+      const counted = Number(it.counted) || 0;
+      const price = Number(it.price) || 0;
+      if(it.web && !listed){
+        out.push({ bc, kind:'add', counted, price });
+      } else if(it.web && listed){
+        const wq = Number(it.webQty) || 0;
+        const wp = Number(it.webPrice) || 0;
+        if(wq !== counted || wp !== price){
+          out.push({ bc, kind: counted === 0 ? 'gone' : 'update', counted, price, wq, wp });
+        }
+      } else if(!it.web && listed){
+        out.push({ bc, kind:'remove', counted, price, wq:Number(it.webQty) || 0 });
+      }
+    });
+    // Sold out first: that is the one where the website can take an order for
+    // something that is already gone.
+    const order = { gone:0, update:1, add:2, remove:3 };
+    out.sort((a,b) => (order[a.kind] - order[b.kind])
+      || String(items[a.bc].name).localeCompare(String(items[b.bc].name)));
+    return out;
+  }
+
+  // One line saying what a person actually has to go and do.
+  function webTodoText(t){
+    const it = items[t.bc];
+    const priceChanged = t.kind === 'update' && t.wp !== t.price;
+    if(t.kind === 'gone'){
+      return `Sold out — take it down. The website still says ${t.wq} in stock.`;
+    }
+    if(t.kind === 'update'){
+      const qtyBit = t.wq !== t.counted ? `${t.wq} → ${t.counted} in stock` : '';
+      const priceBit = priceChanged ? `${money(t.wp)} → ${money(t.price)}` : '';
+      return 'Change ' + [qtyBit, priceBit].filter(Boolean).join(' · ');
+    }
+    if(t.kind === 'add'){
+      return `Put it on the website — ${t.counted} in stock`
+        + (t.price > 0 ? ` at ${money(t.price)}` : ', no price set yet')
+        + (it && it.photo ? '' : ' · no photo yet');
+    }
+    return `Take it off the website — it is marked shop only now.`;
+  }
+
+  // Record that the website now matches this item. This is the ONLY thing that
+  // moves webQty/webPrice, so the list can never be quietly wrong.
+  function webMarkDone(bc){
+    const it = items[bc];
+    if(!it) return;
+    if(it.web){
+      it.webQty = Number(it.counted) || 0;
+      it.webPrice = Number(it.price) || 0;
+    } else {
+      delete it.webQty;
+      delete it.webPrice;
+    }
+  }
+
+  // The banner at the top of the Stock tab. Called from saveItems(), so it is
+  // right after a sale, a refund, an edit or anything arriving over sync.
+  function renderWebBanner(){
+    const el = document.getElementById('webBanner');
+    if(!el) return;
+    const todos = webTodos();
+    webDue = {};
+    todos.forEach(t => { webDue[t.bc] = 1; });
+    if(todos.length === 0){ el.style.display = 'none'; return; }
+    const gone = todos.filter(t => t.kind === 'gone').length;
+    document.getElementById('webBannerCount').textContent = todos.length;
+    document.getElementById('webBannerText').textContent =
+      gone > 0
+        ? `${gone} sold out on the shelf, still on the website`
+        : 'Website needs updating';
+    document.getElementById('webBannerSub').textContent =
+      gone > 0 && todos.length > gone
+        ? `and ${todos.length - gone} other change${todos.length - gone === 1 ? '' : 's'}`
+        : 'Tap to see what has changed since it was last set';
+    el.style.display = 'flex';
+  }
+
+  function renderWebTodo(){
+    const listEl = document.getElementById('webTodoList');
+    const todos = webTodos();
+    if(todos.length === 0){
+      listEl.innerHTML = '<div class="empty-state">Nothing to change — the website matches the shelf.</div>';
+      document.getElementById('webTodoAllBtn').style.display = 'none';
+      return;
+    }
+    document.getElementById('webTodoAllBtn').style.display = '';
+    listEl.innerHTML = todos.map(t => {
+      const it = items[t.bc];
+      return `
+        <div class="web-row" data-bc="${escapeAttr(t.bc)}">
+          <div class="what">
+            <div class="nm">${escapeHtml(it.name)}</div>
+            <div class="act ${t.kind}">${escapeHtml(webTodoText(t))}</div>
+          </div>
+          <button type="button" class="tick" title="The website matches now">✓</button>
+        </div>`;
+    }).join('');
+    listEl.querySelectorAll('.web-row .tick').forEach(btn => {
+      btn.addEventListener('click', () => {
+        webMarkDone(btn.parentElement.dataset.bc);
+        saveItems();
+        renderWebTodo();
+        renderList(document.getElementById('searchBox').value);
+      });
+    });
+  }
+
+  function openWebTodo(){
+    renderWebTodo();
+    document.getElementById('webTodoModal').style.display = 'flex';
+  }
+
+  // The note under the website tick in the edit form: what the website is
+  // believed to be showing for this one, and whether that is still true.
+  function renderEditWebState(it){
+    const on = document.getElementById('editWebOn').checked;
+    document.getElementById('editWebMore').style.display = on ? 'block' : 'none';
+    const note = document.getElementById('editWebState');
+    if(!on && !webListed(it)){
+      note.textContent = 'Shop only. Nothing about this one is on the website.';
+      return;
+    }
+    if(!on && webListed(it)){
+      note.textContent = 'It is still up on the website. It will show on the website list as one to take down.';
+      return;
+    }
+    if(!webListed(it)){
+      note.textContent = 'Not on the website yet — it will show on the website list as one to add.';
+      return;
+    }
+    const counted = Number(it.counted) || 0;
+    const price = Number(it.price) || 0;
+    const wq = Number(it.webQty) || 0;
+    const wp = Number(it.webPrice) || 0;
+    note.textContent = (wq === counted && wp === price)
+      ? `The website is showing ${wq} at ${money(wp)} — which matches the shelf.`
+      : `The website is showing ${wq} at ${money(wp)}. The shelf has ${counted} at ${money(price)}, so it needs changing over there.`;
+  }
+
+  document.getElementById('editWebOn').addEventListener('change', () => {
+    const it = items[currentEditBarcode];
+    if(it) renderEditWebState(it);
+  });
+
+  document.getElementById('webBanner').addEventListener('click', openWebTodo);
+  document.getElementById('webTodoClose').addEventListener('click', () => {
+    document.getElementById('webTodoModal').style.display = 'none';
+  });
+  document.getElementById('webTodoModal').addEventListener('click', (e) => {
+    if(e.target === document.getElementById('webTodoModal')){
+      document.getElementById('webTodoModal').style.display = 'none';
+    }
+  });
+  document.getElementById('webTodoAllBtn').addEventListener('click', () => {
+    const todos = webTodos();
+    if(todos.length === 0) return;
+    askConfirm(
+      'Tick everything off?',
+      `This records that the website already matches all ${todos.length} of these. `
+      + `It changes nothing on the website — only tick this off once the changes are actually made there, `
+      + `or when marking up stock that is already listed correctly.`,
+      'They all match',
+      () => {
+        todos.forEach(t => webMarkDone(t.bc));
+        saveItems();
+        renderWebTodo();
+        renderList(document.getElementById('searchBox').value);
+        showToast(`${todos.length} marked as matching the website`, 'success');
+      }
+    );
+  });
+
   // ---- Rendering ----
   function renderSession(){
     document.getElementById('sessionDate').textContent = fmtDate(sessionDate);
@@ -3934,6 +4249,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
 
     refreshFolderOptions();
+    refreshWebDue();
     lastFiltered = filtered;
 
     if(barcodes.length === 0){
@@ -3979,7 +4295,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             ${selectMode ? `<span class="pick">${picked ? '✓' : ''}</span>` : ''}
             ${thumbHtml(it)}
             <div style="min-width:0;">
-              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}</div>
+              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}${webBadgeHtml(bc)}</div>
               <div class="item-meta">Made by ${escapeHtml(it.maker||'—')} · Expected ${it.qty}${folderTag}</div>
               <div class="item-price">${priceLine}</div>
               <div class="expected">${diffLabel}</div>
@@ -4691,6 +5007,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('bulkEditTitle').textContent = 'Edit ' + n + ' item' + (n===1?'':'s');
     document.getElementById('bulkFolderInput').value = '';
     document.getElementById('bulkMakerInput').value = '';
+    document.getElementById('bulkWebInput').value = '';
     document.getElementById('bulkEditModal').style.display = 'flex';
   });
   document.getElementById('bulkEditCancel').addEventListener('click', () => {
@@ -4702,12 +5019,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('bulkEditApply').addEventListener('click', () => {
     const f = document.getElementById('bulkFolderInput').value.trim();
     const m = document.getElementById('bulkMakerInput').value.trim();
-    if(!f && !m){ showToast('Fill in a folder or a made-by first', 'error'); return; }
+    const w = document.getElementById('bulkWebInput').value;
+    if(!f && !m && !w){ showToast('Fill in a folder, a made-by or the website setting first', 'error'); return; }
     const bcs = Object.keys(bulkPicked);
     bcs.forEach(bc => {
       if(!items[bc]) return;
       if(f) items[bc].folder = (f === '/') ? '' : normFolder(f);
       if(m) items[bc].maker = (m === '-') ? '' : m;
+      if(w === 'on') items[bc].web = 1;
+      else if(w === 'off') delete items[bc].web;
     });
     if(!saveItems()) return;
     document.getElementById('bulkEditModal').style.display = 'none';
@@ -4724,7 +5044,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const list  = shown.join(', ') + (rest > 0 ? ' and ' + rest + ' more' : '');
     askConfirm(
       'Delete ' + bcs.length + ' item' + (bcs.length===1?'':'s') + '?',
-      list + ' will be removed from your stock list permanently. Sales already made are not changed.',
+      list + ' will be removed from your stock list permanently. Sales already made are not changed.'
+      + (() => {
+          const onWeb = bcs.filter(bc => items[bc] && (items[bc].web || webListed(items[bc]))).length;
+          return onWeb
+            ? ` ${onWeb} of them ${onWeb===1?'is':'are'} on the website — take those listings down yourself, because once the items are deleted the website list cannot remind you.`
+            : '';
+        })(),
       'Delete ' + bcs.length,
       () => {
         let n = 0;
@@ -7917,6 +8243,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     document.getElementById('editItemCounted').value = it.counted || 0;
 
+    document.getElementById('editWebOn').checked = !!it.web;
+    document.getElementById('editWebDesc').value = it.webDesc || '';
+    renderEditWebState(it);
+
     // Set pricing: own rule, partner in someone else's rule, or neither
     const owned = setMembers(barcode) ? it.set : null;
     const partnerRule = owned ? null : setRules().find(r => r.owner !== barcode && r.members.indexOf(barcode) !== -1);
@@ -7986,6 +8316,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     else if(editPhotoWasSet){ it.photoCleared = 1; it.photo = ''; }
     // else: the form opened without a photo and still has none — nothing to say.
     it.counted = parseInt(document.getElementById('editItemCounted').value,10) || 0;
+    if(document.getElementById('editWebOn').checked) it.web = 1; else delete it.web;
+    const webDesc = document.getElementById('editWebDesc').value.trim();
+    if(webDesc) it.webDesc = webDesc; else delete it.webDesc;
     if(newSet) it.set = newSet;
     else if(clearSet) delete it.set;
     saveItems();
@@ -7999,7 +8332,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const bc = currentEditBarcode;
     askConfirm(
       'Delete this item?',
-      `"${it ? it.name : 'This item'}" will be removed from your stock list permanently.`,
+      `"${it ? it.name : 'This item'}" will be removed from your stock list permanently.`
+      + ((it && (it.web || webListed(it)))
+          ? ' It is on the website — take that listing down yourself, because deleting it here means the website list will not be able to remind you.'
+          : ''),
       'Delete',
       () => {
         delete items[bc];

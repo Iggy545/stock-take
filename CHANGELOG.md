@@ -9,6 +9,41 @@ fixes.
 
 ---
 
+## v1.8.0 - 24 August 2026, 23:05
+
+### Added
+- **The till now keeps track of what the website has been told.** Tick **This one sells on
+  the website too** on an item, and from then on the app knows the difference between what
+  the website is showing and what is actually on the shelf.
+- **A website list at the top of the Stock tab**, whenever something needs changing over
+  there. Selling the last one at the counter puts it straight on that list as *Sold out —
+  take it down*, which until now was the one thing nobody was told about.
+- Each line says exactly what to go and do: *2 → 1 in stock*, *£35.00 → £40.00*, *Put it on
+  the website — 3 in stock at £25.00*, *Take it off the website*. Sold-out items sort to the
+  top, because those are the ones the website can still take an order for.
+- **Tick a line off once the change is made there.** That is all ticking does — it records
+  that the website now matches. Nothing in the app can reach the website.
+- **A 🌐 on items that sell online** in the stock list, filled in when that one is waiting
+  for a change.
+- **A description for the website** on each item, longer than the shop label. Nothing uses
+  it yet; it is there so it can be written up as stock is handled rather than all at once.
+- **Sells on the website is in the bulk editor**, so a whole folder can be marked in one go.
+  For marking up stock that is *already* listed correctly: mark them, open the website list
+  and use **Tick everything off**.
+- Deleting an item that is on the website now says so, because once it is deleted the
+  website list can no longer remind you it is up there.
+
+### Notes
+- **This still does not talk to the website.** It cannot — SumUp's online store has no way
+  in for us. What it does is make sure nobody has to remember, and that what is left to do
+  is written down rather than carried in someone's head.
+- The list is worked out fresh every time from the stock itself, so it cannot drift out of
+  step the way a to-do list would. There is nothing to tidy up and nothing to go stale.
+- Web sales rung through the **🌐 Web** button take stock off the shelf like any sale, so
+  they land on this list too — the website's own count still needs changing by hand.
+
+---
+
 ## v1.7.1 - 24 August 2026, 22:47
 
 ### Fixed
