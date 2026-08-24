@@ -9,6 +9,38 @@ fixes.
 
 ---
 
+## v1.7.0 - 24 August 2026, 16:40
+
+### Added
+- **A Web button at the till, next to Cash and Card.** Something sold on the website gets
+  rung through exactly like a sale at the counter — scan or tap the item, tap **🌐 Web**,
+  and the stock comes off the shelf, the sale is recorded and a receipt number is issued.
+  It is the only way stock stays honest when the same shelf is being sold from twice.
+- **A box for the website's order number**, optional, on that same screen. It prints on the
+  receipt as "Order no." and lands in the sales CSV in a column of its own, so a sale in
+  the app can be matched back to the order in the SumUp store without guessing from times
+  and amounts.
+- **Website money is counted on its own.** The report shows a 🌐 Website figure beside
+  Cash and Card, and the report CSV carries it. It is deliberately not folded in with
+  ✨ Other: that money is not notes in the till, and it did not come off the reader either.
+
+### Notes
+- **Payouts take the website's own fee, not the reader's.** Settings → Supplier payouts now
+  has a second percentage for website sales, starting at 2.5%. **Check what yours actually
+  is on the SumUp dashboard** — the online rate is not the in-person one, and paying a
+  maker at the reader's rate would hand them money the shop never received.
+- Website money settles into the bank, so it appears on the payout sheet under
+  **from the bank**, on its own line beside card. Nothing about it comes out of the till.
+- Same rule as card: the fee is taken on website **sales**, not sales net of refunds.
+- A refund of a website sale stays a website sale, so it comes off that column rather than
+  off the till.
+- The four payment buttons now sit two by two instead of in one cramped row.
+- **The website is not told anything.** Selling the last one at the counter does not reduce
+  the website's stock, and the site could still take an order for it. That side is still
+  done by hand.
+
+---
+
 ## v1.6.0 - 24 August 2026, 16:05
 
 ### Added

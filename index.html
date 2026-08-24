@@ -370,7 +370,7 @@
   .cart-totals .t-row{display:flex;justify-content:space-between;padding:3px 0;color:var(--muted);}
   .cart-totals .t-row.grand{font-size:18px;font-weight:800;color:var(--ink);padding-top:6px;}
   .charge-btn{background:var(--moss);color:#fff;font-size:17px;padding:15px;}
-  .pay-methods{display:flex;gap:8px;margin:12px 0;}
+  .pay-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
   .pay-method{flex:1;padding:14px 8px;text-align:center;border-radius:12px;border:2px solid var(--line);background:var(--panel);font-size:14px;font-weight:700;cursor:pointer;color:var(--muted);}
   .pay-method.sel{border-color:var(--moss);color:var(--moss-dark);background:rgba(91,123,98,0.08);}
   .change-due{text-align:center;font-size:15px;padding:10px;border-radius:10px;background:var(--line);margin-bottom:10px;font-weight:600;}
@@ -725,12 +725,20 @@
       <div class="quick-sell-head">Supplier payouts</div>
       <label for="cardFeeInput">Card fee taken off supplier payouts (%)</label>
       <input type="number" id="cardFeeInput" inputmode="decimal" step="0.01" min="0" max="99" placeholder="1.69">
+      <label for="webFeeInput" style="margin-top:10px;">Website fee taken off supplier payouts (%)</label>
+      <input type="number" id="webFeeInput" inputmode="decimal" step="0.01" min="0" max="99" placeholder="2.50">
       <button class="btn btn-primary" id="cardFeeSaveBtn" style="margin-top:8px;width:100%;">Save</button>
       <div class="folder-hint" style="margin-top:8px;">
         Suppliers are paid the full sale price on cash, and the sale price less this
         percentage on card. SumUp's standard UK rate is <b>1.69%</b>; on their £19/month
         plan it drops to <b>0.99%</b>. The figures appear at the bottom of
         <b>Sales &rarr; 📊 Report</b> for whatever period you pick.
+      </div>
+      <div class="folder-hint" style="margin-top:8px;">
+        Anything rung up with the 🌐 <b>Web</b> button uses the second figure instead. The
+        website charges its own rate, which is not the same as the reader's — check what
+        yours actually is on the SumUp dashboard rather than trusting the <b>2.5%</b>
+        this starts at.
       </div>
       <div class="storage-note" id="cardFeeNote"></div>
     </div>
@@ -1149,6 +1157,7 @@
     <div class="pay-methods">
       <button class="pay-method sel" data-pay="cash" type="button">💵 Cash</button>
       <button class="pay-method" data-pay="card" type="button">💳 Card</button>
+      <button class="pay-method" data-pay="web" type="button">🌐 Web</button>
       <button class="pay-method" data-pay="other" type="button">✨ Other</button>
     </div>
     <div id="cashSection">
@@ -1159,6 +1168,15 @@
     </div>
     <div id="cardSection" style="display:none;">
       <div class="folder-hint" id="cardSectionHint"></div>
+    </div>
+    <div id="webSection" style="display:none;">
+      <label for="webRefInput">Website order number (optional)</label>
+      <input type="text" id="webRefInput" placeholder="e.g. 1042" autocomplete="off" spellcheck="false">
+      <div class="folder-hint">
+        For something sold on the website. Stock comes off exactly as it does at the
+        counter, and it is recorded as a <b>website</b> sale so it can be told apart
+        from the till. The money arrives through SumUp, not the till drawer.
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="payCancel">Back</button>
@@ -3603,9 +3621,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.6.0';
+  const APP_VERSION = '1.7.0';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '16:05';
+  const BUILD_TIME  = '16:40';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5016,6 +5034,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     payMethod = 'cash';
     refreshPayMethods();
     document.getElementById('tenderInput').value = '';
+    document.getElementById('webRefInput').value = '';
     buildTenderQuick(f.total);
     refreshChange();
     document.getElementById('payModal').style.display = 'flex';
@@ -5025,6 +5044,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       b.classList.toggle('sel', b.dataset.pay===payMethod);
     });
     document.getElementById('cashSection').style.display = payMethod==='cash' ? 'block' : 'none';
+    document.getElementById('webSection').style.display  = payMethod==='web'  ? 'block' : 'none';
 
     // Card with a reader configured is the only method that leaves the app, so
     // it gets its own wording — pressing "Complete sale" for a card that hasn't
@@ -5035,7 +5055,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('cardSectionHint').textContent = useReader
       ? 'The amount goes to the card reader when you tap below.'
       : 'Recorded as a card sale. Take the payment on the reader yourself.';
-    document.getElementById('payComplete').textContent = useReader ? 'Send to card reader' : 'Complete sale';
+    document.getElementById('payComplete').textContent = useReader ? 'Send to card reader'
+      : (payMethod==='web' ? 'Record website sale' : 'Complete sale');
   }
   document.querySelectorAll('.pay-method').forEach(b => b.addEventListener('click', () => {
     payMethod = b.dataset.pay; refreshPayMethods();
@@ -5275,12 +5296,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         change = round2(t - f.total);
       }
     }
-    const txn = completeSale(payMethod, tendered, change);
+    const webRef = payMethod==='web'
+      ? document.getElementById('webRefInput').value.trim().slice(0,40)
+      : '';
+    const txn = completeSale(payMethod, tendered, change, null, webRef);
     document.getElementById('payModal').style.display='none';
     openReceipt(txn.id, { fresh: true });
   });
 
-  function completeSale(pay, tendered, change, card){
+  function completeSale(pay, tendered, change, card, webRef){
     const f = cartFigures();
     const txnId = uid('T');
     const receiptNo = nextReceiptNo();
@@ -5332,6 +5356,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         change:   (i===0 && change!=null)   ? change   : null,
         sumupTxId: (i===0 && card && card.txId) ? card.txId : null,
         sumupCode: (i===0 && card && card.code) ? card.code : null,
+        // The website's own order number, so a web sale can be found again in
+        // the SumUp store's order list. First line only, like the card details.
+        webRef: (i===0 && webRef) ? webRef : null,
         cardRefund: null,
         // How much of this line's discount came from a set price, so the
         // receipt can call it that instead of a plain discount.
@@ -5363,7 +5390,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(!map[t]){
         map[t] = { id:t, lines:[], at:s.at||'', receiptNo:s.receiptNo||null,
                    pay:s.pay||'', kind:s.kind||'sale', tendered:null, change:null,
-                   sumupTxId:null, sumupCode:null, cardRefund:null };
+                   sumupTxId:null, sumupCode:null, cardRefund:null, webRef:null };
         order.push(t);
       }
       const g = map[t];
@@ -5373,6 +5400,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(s.change!=null) g.change = s.change;
       if(s.sumupTxId) g.sumupTxId = s.sumupTxId;
       if(s.sumupCode) g.sumupCode = s.sumupCode;
+      if(s.webRef) g.webRef = s.webRef;
       // "Sent" wins over "due". The lines of one refund are always written
       // together, so they should never disagree — but if a sync merge ever left
       // them split, the safe reading is that the money has already gone back,
@@ -5389,6 +5417,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function findTxn(id){ return txnGroups().find(g => g.id===id) || null; }
 
   // ---- Receipts ----
+  // One place for what each payment method is called, so the printed receipt,
+  // the plain-text receipt and the sold list cannot drift apart.
+  const PAY_NAMES = { cash:'Cash', card:'Card', web:'Website', other:'Other' };
+  const PAY_ICONS = { cash:'💵', card:'💳', web:'🌐', other:'✨' };
   let receiptTxnId = null;
 
   // The sale a refund came from. A refund is always raised against one sale, so
@@ -5449,8 +5481,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       });
     }
     h += `<div class="r-line r-total"><span class="r-l">${isRefund?'Refunded':'Total'}</span><span>${money(total)}</span></div>`;
-    const payNames = { cash:'Cash', card:'Card', other:'Other' };
-    if(g.pay) h += `<div class="r-line"><span class="r-l">Paid by</span><span>${payNames[g.pay]||g.pay}</span></div>`;
+    if(g.pay) h += `<div class="r-line"><span class="r-l">Paid by</span><span>${PAY_NAMES[g.pay]||g.pay}</span></div>`;
+    if(g.webRef) h += `<div class="r-line"><span class="r-l">Order no.</span><span>${escapeHtml(g.webRef)}</span></div>`;
     // The card slip already carries our receipt number, so the slip can find the
     // sale. Printing SumUp's code here makes it work the other way too — which is
     // the direction you need when a customer turns up holding this piece of paper
@@ -5494,7 +5526,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
     out.push('-'.repeat(W));
     out.push(pad(g.kind==='refund' ? 'REFUNDED' : 'TOTAL', money(txnTotal(g))));
-    if(g.pay) out.push(pad('Paid by', g.pay));
+    if(g.pay) out.push(pad('Paid by', PAY_NAMES[g.pay]||g.pay));
+    if(g.webRef) out.push(pad('Order no.', g.webRef));
     // The printed receipt has always named the staff member; the shared one
     // never did. Same line, same wording, so the two agree.
     const servedBy = (g.lines.find(l => l.staff)||{}).staff;
@@ -5742,7 +5775,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   function zFigures(fromStr, toStr){
     const f = { gross:0, discounts:0, refunds:0, net:0, txns:0, units:0,
-                pay:{cash:0, card:0, other:0}, sellers:{} };
+                pay:{cash:0, card:0, web:0, other:0}, sellers:{} };
     const seen = {};
     sales.forEach(s => {
       const ld = localDateStr(new Date(s.at));
@@ -5761,7 +5794,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         f.sellers[key].net = round2(f.sellers[key].net + net);
       }
       f.net += net;
-      const p = (s.pay==='cash'||s.pay==='card') ? s.pay : 'other';
+      const p = (s.pay==='cash'||s.pay==='card'||s.pay==='web') ? s.pay : 'other';
       f.pay[p] += net;
     });
     f.txns = Object.keys(seen).length;
@@ -5787,13 +5820,26 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return (isFinite(v) && v >= 0 && v < 100) ? v : 1.69;   // SumUp standard UK rate
   }
 
+  // The website charges its own rate, which is not the reader's. Paying a maker
+  // the in-person rate on an online sale would quietly hand them money the shop
+  // never received, so web sales carry their own percentage. Same rule as card:
+  // the fee comes off web SALES, not sales net of refunds.
+  const WEB_FEE_KEY = 'posWebFeePct';
+  function webFeePct(){
+    let v = NaN;
+    try{ v = parseFloat(localStorage.getItem(WEB_FEE_KEY)); }catch(e){}
+    return (isFinite(v) && v >= 0 && v < 100) ? v : 2.5;   // SumUp online; set it in Settings
+  }
+
   function makerFigures(fromStr, toStr){
-    const rate = cardFeePct() / 100;
+    const rate    = cardFeePct() / 100;
+    const webRate = webFeePct() / 100;
     const makers = {};
     function bucket(name){
       const key = String(name||'').trim() || '—';
       if(!makers[key]) makers[key] = { name:key, units:0, cash:0, other:0,
-                                       cardSales:0, cardRefunds:0, refunds:0 };
+                                       cardSales:0, cardRefunds:0,
+                                       webSales:0, webRefunds:0, refunds:0 };
       return makers[key];
     }
     sales.forEach(s => {
@@ -5801,10 +5847,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(ld < fromStr || ld > toStr) return;
       const m = bucket(s.maker);
       const net = lineNet(s), q = lineQty(s);
-      const pay = (s.pay==='cash' || s.pay==='card') ? s.pay : 'other';
+      const pay = (s.pay==='cash' || s.pay==='card' || s.pay==='web') ? s.pay : 'other';
       m.units += q;                       // signed, so a refund reduces the count
       if(pay === 'card'){
         if(net >= 0) m.cardSales += net; else { m.cardRefunds += -net; m.refunds += -net; }
+      }else if(pay === 'web'){
+        if(net >= 0) m.webSales += net; else { m.webRefunds += -net; m.refunds += -net; }
       }else{
         m[pay] += net;
         if(net < 0) m.refunds += -net;
@@ -5814,11 +5862,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const m = makers[k];
       m.cardSales   = round2(m.cardSales);
       m.cardRefunds = round2(m.cardRefunds);
+      m.webSales    = round2(m.webSales);
+      m.webRefunds  = round2(m.webRefunds);
       m.cash        = round2(m.cash);
       m.other       = round2(m.other);
       m.refunds     = round2(m.refunds);
       m.fee         = round2(m.cardSales * rate);
-      m.sold        = round2(m.cash + m.other + m.cardSales - m.cardRefunds);
+      m.webFee      = round2(m.webSales * webRate);
+      m.sold        = round2(m.cash + m.other + m.cardSales - m.cardRefunds
+                             + m.webSales - m.webRefunds);
       // Split by where the money physically is, because paying it out is two
       // different jobs: cash comes straight out of the till, card has to be
       // transferred from the bank once SumUp has settled it.
@@ -5829,24 +5881,29 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       m.fromCash    = m.cash;
       m.fromOther   = m.other;
       m.fromCard    = round2(m.cardSales - m.cardRefunds - m.fee);
-      m.owed        = round2(m.fromCash + m.fromOther + m.fromCard);
+      // Website money settles into the bank the way card does, but it is kept on
+      // its own line: it carries a different fee, and seeing which channel the
+      // money is coming from is the point of this table.
+      m.fromWeb     = round2(m.webSales - m.webRefunds - m.webFee);
+      m.owed        = round2(m.fromCash + m.fromOther + m.fromCard + m.fromWeb);
       return m;
-    }).filter(m => m.sold !== 0 || m.units !== 0 || m.fee !== 0)
+    }).filter(m => m.sold !== 0 || m.units !== 0 || m.fee !== 0 || m.webFee !== 0)
       .sort((a,b) => b.owed - a.owed);
-    return { rows: rows, ratePct: cardFeePct() };
+    return { rows: rows, ratePct: cardFeePct(), webRatePct: webFeePct() };
   }
 
   function payoutBodyHtml(fromStr, toStr){
     const p = makerFigures(fromStr, toStr);
     if(!p.rows.length) return '';
     let h = `<div class="quick-sell-head" style="margin-top:14px;">Supplier payouts</div>`;
-    h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales. Cash pays in full.</div>`;
+    h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales and ${p.webRatePct}% on website sales. Cash pays in full.</div>`;
     p.rows.forEach(m => {
       h += `<div class="payout-row">
         <div class="payout-head"><span>${escapeHtml(m.name)}</span><span>${money(m.owed)}</span></div>
         <div class="payout-split">
           <span>💵 from cash <b>${money(m.fromCash)}</b></span>
           <span>💳 from card <b>${money(m.fromCard)}</b></span>
+          ${m.fromWeb ? `<span>🌐 from website <b>${money(m.fromWeb)}</b></span>` : ''}
           ${m.fromOther ? `<span>✨ from other <b>${money(m.fromOther)}</b></span>` : ''}
         </div>
         <div class="payout-detail">
@@ -5854,8 +5911,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           <span>cash ${money(m.cash)}</span>
           ${m.other ? `<span>other ${money(m.other)}</span>` : ''}
           <span>card sales ${money(m.cardSales)}</span>
+          ${m.webSales ? `<span>website sales ${money(m.webSales)}</span>` : ''}
           ${m.refunds ? `<span>refunds −${money(m.refunds)}</span>` : ''}
-          ${m.fee ? `<span>fee −${money(m.fee)}</span>` : ''}
+          ${m.fee ? `<span>card fee −${money(m.fee)}</span>` : ''}
+          ${m.webFee ? `<span>website fee −${money(m.webFee)}</span>` : ''}
         </div>
       </div>`;
     });
@@ -5863,11 +5922,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const tCash  = round2(p.rows.reduce((a,m) => a + m.fromCash, 0));
     const tCard  = round2(p.rows.reduce((a,m) => a + m.fromCard, 0));
     const tOther = round2(p.rows.reduce((a,m) => a + m.fromOther, 0));
+    const tWeb   = round2(p.rows.reduce((a,m) => a + m.fromWeb, 0));
     h += `<div class="payout-row payout-total">
       <div class="payout-head"><span>Total to pay out</span><span>${money(owed)}</span></div>
       <div class="payout-split">
         <span>💵 out of the till <b>${money(tCash)}</b></span>
         <span>💳 from the bank <b>${money(tCard)}</b></span>
+        ${tWeb ? `<span>🌐 website, from the bank <b>${money(tWeb)}</b></span>` : ''}
         ${tOther ? `<span>✨ other <b>${money(tOther)}</b></span>` : ''}
       </div>
     </div>`;
@@ -5878,11 +5939,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function payoutCsv(fromStr, toStr){
     const p = makerFigures(fromStr, toStr);
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    let csv = `Maker,Items,Pay from cash,Pay from card,Pay from other,Owed,Card sales,Refunds,Card fee (${p.ratePct}%)\n`;
+    let csv = `Maker,Items,Pay from cash,Pay from card,Pay from website,Pay from other,Owed,`
+            + `Card sales,Website sales,Refunds,Card fee (${p.ratePct}%),Website fee (${p.webRatePct}%)\n`;
     p.rows.forEach(m => {
       csv += [m.name, m.units, m.fromCash.toFixed(2), m.fromCard.toFixed(2),
-              m.fromOther.toFixed(2), m.owed.toFixed(2), m.cardSales.toFixed(2),
-              m.refunds.toFixed(2), m.fee.toFixed(2)].map(esc).join(',') + '\n';
+              m.fromWeb.toFixed(2), m.fromOther.toFixed(2), m.owed.toFixed(2),
+              m.cardSales.toFixed(2), m.webSales.toFixed(2),
+              m.refunds.toFixed(2), m.fee.toFixed(2), m.webFee.toFixed(2)].map(esc).join(',') + '\n';
     });
     return csv;
   }
@@ -5900,6 +5963,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       <div class="report-cell"><div class="rc-label">Discounts given</div><div class="rc-value">−${money(f.discounts)}</div></div>
       <div class="report-cell"><div class="rc-label">Refunds</div><div class="rc-value">−${money(f.refunds)}</div></div>
     </div>`;
+    if(f.pay.web){
+      h += `<div class="report-cell" style="margin-bottom:8px;"><div class="rc-label">🌐 Website</div><div class="rc-value">${money(f.pay.web)}</div></div>`;
+    }
     if(f.pay.other){
       h += `<div class="report-cell" style="margin-bottom:8px;"><div class="rc-label">✨ Other payments</div><div class="rc-value">${money(f.pay.other)}</div></div>`;
     }
@@ -5977,7 +6043,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     let csv = 'Metric,Value\n';
     [['Period',r.label],['Net takings',f.net.toFixed(2)],['Transactions',f.txns],
      ['Items sold',f.units],['Cash',f.pay.cash.toFixed(2)],['Card',f.pay.card.toFixed(2)],
-     ['Other',f.pay.other.toFixed(2)],['Discounts',f.discounts.toFixed(2)],
+     ['Website',f.pay.web.toFixed(2)],['Other',f.pay.other.toFixed(2)],
+     ['Discounts',f.discounts.toFixed(2)],
      ['Refunds',f.refunds.toFixed(2)]
     ].forEach(r => { csv += r.map(esc).join(',') + '\n'; });
     csv += '\nTop sellers\nItem,Qty,Net\n';
@@ -6017,18 +6084,29 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // ---- Supplier payout settings ----
   (function initPayoutSettings(){
     const input = document.getElementById('cardFeeInput');
+    const web   = document.getElementById('webFeeInput');
     const note  = document.getElementById('cardFeeNote');
     if(!input) return;
-    function show(){ note.textContent = 'Card sales pay out at ' + (100 - cardFeePct()).toFixed(2) + '% to the supplier.'; }
+    function show(){
+      note.textContent = 'Card sales pay out at ' + (100 - cardFeePct()).toFixed(2)
+        + '% to the supplier, website sales at ' + (100 - webFeePct()).toFixed(2) + '%.';
+    }
     input.value = cardFeePct();
+    web.value   = webFeePct();
     show();
     document.getElementById('cardFeeSaveBtn').addEventListener('click', () => {
       const v = parseFloat(input.value);
-      if(!isFinite(v) || v < 0 || v >= 100){ showToast('Enter a percentage between 0 and 99', 'error'); return; }
-      try{ localStorage.setItem(CARD_FEE_KEY, String(v)); }catch(e){ showToast('Could not save on this device', 'error'); return; }
+      const w = parseFloat(web.value);
+      if(!isFinite(v) || v < 0 || v >= 100){ showToast('Enter a card percentage between 0 and 99', 'error'); return; }
+      if(!isFinite(w) || w < 0 || w >= 100){ showToast('Enter a website percentage between 0 and 99', 'error'); return; }
+      try{
+        localStorage.setItem(CARD_FEE_KEY, String(v));
+        localStorage.setItem(WEB_FEE_KEY, String(w));
+      }catch(e){ showToast('Could not save on this device', 'error'); return; }
       input.value = cardFeePct();
+      web.value   = webFeePct();
       show();
-      showToast('Card fee saved', 'success');
+      showToast('Payout fees saved', 'success');
     });
   })();
 
@@ -6122,7 +6200,6 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     emptyEl.style.display = 'none';
 
-    const payIcon = { cash:'💵', card:'💳', other:'✨' };
     const shown = groups.slice(0, 100);   // history stays snappy on old phones
     listEl.innerHTML = shown.map((g, idx) => {
       const total = txnTotal(g);
@@ -6137,7 +6214,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         <div class="txn-row" data-ti="${idx}">
           <div style="min-width:0;">
             <div class="item-name">${label}${refBadge}${dueBadge}</div>
-            <div class="item-meta">${when.toLocaleDateString(undefined,{day:'numeric',month:'short'})} ${when.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})} · ${units} item${units===1?'':'s'} ${payIcon[g.pay]||''}</div>
+            <div class="item-meta">${when.toLocaleDateString(undefined,{day:'numeric',month:'short'})} ${when.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})} · ${units} item${units===1?'':'s'} ${PAY_ICONS[g.pay]||''}</div>
           </div>
           <div class="cl-total" style="min-width:70px;">${money(total)}</div>
         </div>`;
@@ -6202,7 +6279,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   document.getElementById('exportSalesBtn').addEventListener('click', () => {
     if(sales.length === 0){ showToast('No sales to export', 'error'); return; }
-    let csv = 'Date,Time,Receipt,Type,Barcode,Item,Made By,Unit Price,Qty,Discount,Net,Payment,Staff\n';
+    let csv = 'Date,Time,Receipt,Type,Barcode,Item,Made By,Unit Price,Qty,Discount,Net,Payment,Order No,Staff\n';
     let total = 0;
     sales.forEach(s => {
       const d = new Date(s.at);
@@ -6225,11 +6302,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         (Number(s.disc)||0).toFixed(2),
         net.toFixed(2),
         s.pay || '',
+        s.webRef || '',
         s.staff || ''
       ];
       csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
     });
-    csv += `"TOTAL","","","","","","","","","","${total.toFixed(2)}",""\n`;
+    csv += `"TOTAL","","","","","","","","","","${total.toFixed(2)}","","",""\n`;
 
     // BOM so Excel reads the file as UTF-8 (see report export)
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
