@@ -3553,9 +3553,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.3';
+  const APP_VERSION = '1.5.4';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '01:02';
+  const BUILD_TIME  = '01:23';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3883,15 +3883,22 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
-  // A photo is only ever a data: URI produced by reading a file on this device.
-  // Anything else arrived from somewhere it should not have — a synced record
-  // from another device, or a hand-edited backup file — so it is refused rather
-  // than put into a src attribute. Without this, a photo value of
+  // A photo is either a data: URI captured on this device, or an https: link to
+  // a hosted image — most of the shop's photos are the latter. Both are allowed
+  // and escaped; anything else is refused.
+  //
+  // The escaping is the part that matters: without it a photo value of
   //   x" onerror="...
-  // would break out of the attribute and run on every device showing the list.
+  // would break out of the src attribute and run on every device showing the
+  // list. Refusing other schemes on top of that rules out javascript: and
+  // friends rather than relying on the browser to ignore them.
+  //
+  // v1.5.3 allowed only data: here, which quietly hid 486 of the shop's 495
+  // photos because they are https: links. Widen this carefully, but do not
+  // narrow it again without checking what real photos actually look like.
   function safePhotoSrc(v){
     const s = String(v || '');
-    return /^data:image\//i.test(s) ? escapeAttr(s) : '';
+    return /^(data:image\/|https:\/\/)/i.test(s) ? escapeAttr(s) : '';
   }
   function thumbHtml(it){
     const src = it ? safePhotoSrc(it.photo) : '';

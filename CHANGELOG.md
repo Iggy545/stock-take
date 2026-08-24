@@ -9,6 +9,22 @@ fixes.
 
 ---
 
+## v1.5.4 - 24 August 2026, 01:23
+
+### Fixed
+- **Photos are back.** v1.5.3 tightened what counts as a valid photo and got it wrong: it
+  accepted only photos stored on the device and refused hosted ones, which is what almost
+  all of the shop's photos are. They vanished from the list on every device that picked up
+  that build. Both kinds are accepted again.
+
+### Notes
+- **Nothing was ever deleted.** The photos stayed on every record throughout; they were
+  only being refused at the point of display. Updating to this build brings them back.
+- The v1.5.3 fix it came from is still in place - a photo carrying anything other than a
+  real image is still refused, so the hole it closed stays closed.
+
+---
+
 ## v1.5.3 - 24 August 2026, 01:02
 
 ### Fixed
