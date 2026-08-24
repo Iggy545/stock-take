@@ -3553,9 +3553,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.5.4';
+  const APP_VERSION = '1.5.5';
   const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '01:23';
+  const BUILD_TIME  = '02:05';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5048,8 +5048,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   })();
 
   // Only reached once the service has confirmed with SumUp that money moved.
+  //
+  // SumUp's own identifiers for the payment are recorded on the sale. The id is
+  // what a refund has to be addressed to, and the service only holds it for two
+  // days, so this is the till's one chance to keep it. The code is the short
+  // human-readable one printed on the card slip, which is what you search for
+  // in the SumUp app.
   function finishCardSale(result){
-    const txn = completeSale('card', null, null);
+    const txn = completeSale('card', null, null, {
+      txId: (result && result.sumupTransactionId) || null,
+      code: (result && result.sumupTransactionCode) || null
+    });
     document.getElementById('payModal').style.display='none';
     if(result && result.sumupTransactionCode){
       showToast('Card payment ' + result.sumupTransactionCode, 'success');
@@ -5096,7 +5105,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     openReceipt(txn.id, { fresh: true });
   });
 
-  function completeSale(pay, tendered, change){
+  function completeSale(pay, tendered, change, card){
     const f = cartFigures();
     const txnId = uid('T');
     const receiptNo = nextReceiptNo();
@@ -5125,7 +5134,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         items[l.barcode].counted = Math.max(0, (Number(items[l.barcode].counted)||0) - l.qty);
       }
       // tendered/change live on the first line only; null (not undefined)
-      // because Firestore rejects undefined values when this syncs.
+      // because Firestore rejects undefined values when this syncs. The card
+      // transaction rides along the same way — it belongs to the sale, not to
+      // any one line of it.
       sales.push({
         id: uid('L'),
         txn: txnId,
@@ -5140,6 +5151,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         pay: pay,
         tendered: (i===0 && tendered!=null) ? tendered : null,
         change:   (i===0 && change!=null)   ? change   : null,
+        sumupTxId: (i===0 && card && card.txId) ? card.txId : null,
+        sumupCode: (i===0 && card && card.code) ? card.code : null,
         kind: 'sale',
         refundOfLine: null,
         promo: (cart.promo && f.promoDisc>0) ? cart.promo.code : null,
@@ -5166,7 +5179,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const t = lineTxn(s);
       if(!map[t]){
         map[t] = { id:t, lines:[], at:s.at||'', receiptNo:s.receiptNo||null,
-                   pay:s.pay||'', kind:s.kind||'sale', tendered:null, change:null };
+                   pay:s.pay||'', kind:s.kind||'sale', tendered:null, change:null,
+                   sumupTxId:null, sumupCode:null };
         order.push(t);
       }
       const g = map[t];
@@ -5174,6 +5188,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if((s.at||'') > g.at) g.at = s.at||'';
       if(s.tendered!=null) g.tendered = s.tendered;
       if(s.change!=null) g.change = s.change;
+      if(s.sumupTxId) g.sumupTxId = s.sumupTxId;
+      if(s.sumupCode) g.sumupCode = s.sumupCode;
       if(s.kind==='refund') g.kind = 'refund';
     });
     order.sort((a,b) => map[b].at.localeCompare(map[a].at));
@@ -5381,6 +5397,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         pay: (orig && orig.pay) || 'other',
         tendered: null,
         change: null,
+        // A refund is its own transaction, so it carries no card identifiers of
+        // its own — the money has not been sent back through SumUp by the till.
+        // Present and null rather than absent, so every sale line has one shape.
+        sumupTxId: null,
+        sumupCode: null,
         kind: 'refund',
         refundOfLine: r.line.id || null,
         staff: currentStaff() || null,

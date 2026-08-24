@@ -9,6 +9,28 @@ fixes.
 
 ---
 
+## v1.5.5 - 24 August 2026, 02:05
+
+### Added
+- **A card sale now remembers which card payment paid for it.** When the reader takes a
+  payment, SumUp's own reference for it is saved onto the sale instead of being shown once
+  in a message and then forgotten. Nothing looks any different at the till.
+
+### Notes
+- **This is groundwork for refunding a card payment from the app.** At the moment a refund
+  in the app records the return and puts the stock back, but the money has to be sent back
+  separately in SumUp. Doing that from the till means being able to name the original
+  payment, and until now nothing wrote it down.
+- **It also helps straight away if a customer ever queries a card sale**, because the sale
+  and the card slip can now be matched up without going hunting by amount and time.
+- **The payment service only kept that reference for two days**, so waiting until the
+  refunding was built would have meant every card sale taken before then could never be
+  refunded from the app. That is why this went in on its own and first.
+- **It applies from this build onwards.** Card sales taken before today have no reference
+  stored and will always need refunding by hand in SumUp.
+
+---
+
 ## v1.5.4 - 24 August 2026, 01:23
 
 ### Fixed
