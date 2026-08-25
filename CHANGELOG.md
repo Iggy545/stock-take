@@ -9,6 +9,31 @@ fixes.
 
 ---
 
+## v1.11.0 - 25 August 2026, 12:10
+
+### Added
+- **A starting count for stock nobody has counted yet.** Where the website is showing
+  something as available, that is evidence at least one exists, and one is a better starting
+  figure than a zero that only ever meant "nobody has looked". Comes in through the same
+  import, alongside the website wording, in one go.
+- **A count you have already taken is never overwritten.** An item with a real figure on it
+  keeps it and is reported as left alone. Somebody standing at the shelf beats anything worked
+  out from a web page, so the shelf always wins.
+- The starting figure moves **counted, starting quantity and the website quantity together**.
+  Raising the count on its own would put every one of those items straight back on the website
+  list as *0 → 1 in stock* — hundreds of jobs that are not real.
+
+### Worth knowing
+- This is not a stock take and does not pretend to be. It gives the uncounted items a sensible
+  place to start so the first real count is a correction rather than a blank page.
+- Like the website wording, it cannot reach a name, a price, a photo, a maker or a folder, and
+  will not create an item the device does not have. Only whole numbers of zero or more.
+- `tests/import-items.js` now runs 66 checks. The three that matter most were each confirmed to
+  fail against a deliberately broken copy first: one that overwrote real counts, one that let
+  the file write any field, and one that left the website quantity behind.
+
+---
+
 ## v1.10.0 - 25 August 2026, 12:00
 
 ### Added

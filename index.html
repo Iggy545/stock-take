@@ -3716,9 +3716,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.10.0';
+  const APP_VERSION = '1.11.0';
   const BUILD_DATE  = '25 Aug 2026';
-  const BUILD_TIME  = '12:00';
+  const BUILD_TIME  = '12:10';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -8536,6 +8536,38 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return plan;
   }
 
+  // A first figure for stock nobody has counted yet. The website showing
+  // something as available is evidence that at least one exists, and one is a
+  // better starting point than a zero that only ever meant "nobody looked".
+  //
+  // It is emphatically NOT a stock take, so the rule that matters is the one
+  // below: an item carrying a real count keeps it. A counted figure came from
+  // somebody standing at the shelf and beats anything inferred from a web page.
+  var START_COUNT_FIELDS = ['counted', 'qty', 'webQty'];
+
+  function planStartCount(src, existing){
+    if(!src || typeof src !== 'object' || Array.isArray(src)) return null;
+    const plan = { change: {}, changeCount: 0, alreadyCounted: 0, missing: 0, bad: 0 };
+    Object.keys(src).forEach(bc => {
+      const raw = src[bc];
+      if(!raw || typeof raw !== 'object'){ plan.bad++; return; }
+      const it = existing[bc];
+      if(!it){ plan.missing++; return; }
+      if((Number(it.counted) || 0) > 0 || (Number(it.qty) || 0) > 0){
+        plan.alreadyCounted++;
+        return;
+      }
+      const next = {};
+      START_COUNT_FIELDS.forEach(f => {
+        if(raw[f] === undefined || raw[f] === null) return;
+        const v = Number(raw[f]);
+        if(isFinite(v) && v >= 0 && v === Math.floor(v)) next[f] = v;
+      });
+      if(Object.keys(next).length){ plan.change[bc] = next; plan.changeCount++; }
+    });
+    return plan;
+  }
+
   document.getElementById('importItemsBtn').addEventListener('click', () => {
     document.getElementById('importItemsInput').click();
   });
@@ -8549,35 +8581,51 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       let data;
       try{ data = JSON.parse(reader.result); }catch(err){ showToast('That file is not valid JSON', 'error'); return; }
 
-      // A website-text file is a different job with a different promise, so it
-      // gets its own question rather than being folded into the import count.
-      if(data && data.webText && typeof data.webText === 'object'){
-        const up = planWebTextUpdate(data.webText, items);
-        if(!up || !up.changeCount){
-          showToast(up && up.unchanged
-            ? 'Nothing to change — all ' + up.unchanged + ' already match'
-            : 'No website text found in that file', 'error');
+      // Website details for items already here. A different job from importing
+      // with a different promise, so it gets its own question rather than being
+      // folded into the import count. One file may carry both kinds.
+      const hasWeb = data && data.webText && typeof data.webText === 'object';
+      const hasCount = data && data.startCount && typeof data.startCount === 'object';
+      if(hasWeb || hasCount){
+        const up = hasWeb ? planWebTextUpdate(data.webText, items) : null;
+        const sc = hasCount ? planStartCount(data.startCount, items) : null;
+        const nWeb = (up && up.changeCount) || 0;
+        const nCount = (sc && sc.changeCount) || 0;
+        if(!nWeb && !nCount){
+          const why = [];
+          if(up && up.unchanged) why.push(up.unchanged + ' already have that wording');
+          if(sc && sc.alreadyCounted) why.push(sc.alreadyCounted + ' are already counted');
+          showToast(why.length ? 'Nothing to change — ' + why.join(', ') : 'Nothing usable in that file', 'error');
           return;
         }
+        const does = [];
+        if(nWeb) does.push('writes the website description onto ' + nWeb + ' item' + (nWeb===1?'':'s'));
+        if(nCount) does.push('puts a starting count on ' + nCount + ' item' + (nCount===1?'':'s') + ' nobody has counted yet');
         const un = [];
-        const one = up.unchanged === 1, oneMissing = up.missing === 1;
-        if(up.unchanged) un.push(up.unchanged + (one ? ' already matches' : ' already match'));
-        if(up.missing) un.push(up.missing + (oneMissing ? ' is' : ' are') + ' not on this device');
-        if(up.bad) un.push(up.bad + ' unreadable');
+        if(up && up.unchanged) un.push(up.unchanged + (up.unchanged===1 ? ' already matches' : ' already match'));
+        if(sc && sc.alreadyCounted) un.push(sc.alreadyCounted + ' already counted, left exactly as ' + (sc.alreadyCounted===1?'it is':'they are'));
+        const missing = Math.max((up && up.missing) || 0, (sc && sc.missing) || 0);
+        if(missing) un.push(missing + (missing===1 ? ' is' : ' are') + ' not on this device');
         askConfirm(
-          'Add the website wording?',
-          'This writes the website description onto ' + up.changeCount + ' item'
-          + (up.changeCount===1?'':'s') + ' you already have. '
-          + 'Names, prices, counts and photos are not touched.'
+          'Update from the website?',
+          'This ' + does.join(', and ') + '. '
+          + 'Names, prices and photos are not touched'
+          + (nCount ? ', and a count you have already taken is never overwritten' : '') + '.'
           + (un.length ? ' ' + un.join('. ') + '.' : ''),
-          'Add wording',
+          'Update',
           () => {
-            Object.keys(up.change).forEach(bc => {
-              Object.keys(up.change[bc]).forEach(f => { items[bc][f] = up.change[bc][f]; });
+            [up, sc].forEach(p => {
+              if(!p) return;
+              Object.keys(p.change).forEach(bc => {
+                Object.keys(p.change[bc]).forEach(f => { items[bc][f] = p.change[bc][f]; });
+              });
             });
             if(!saveItems()) return;
             renderList(document.getElementById('searchBox').value);
-            showToast(up.changeCount + ' description' + (up.changeCount===1?'':'s') + ' added', 'success');
+            const said = [];
+            if(nWeb) said.push(nWeb + ' description' + (nWeb===1?'':'s'));
+            if(nCount) said.push(nCount + ' starting count' + (nCount===1?'':'s'));
+            showToast(said.join(' and ') + ' added', 'success');
           }
         );
         return;

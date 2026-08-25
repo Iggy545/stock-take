@@ -35,7 +35,7 @@ function check(name, cond, detail) {
 }
 
 const ctx = env();
-const { planItemImport, safeImportPhoto, planWebTextUpdate } = ctx;
+const { planItemImport, safeImportPhoto, planWebTextUpdate, planStartCount } = ctx;
 
 console.log('\nAdd-only: nothing already here is touched');
 {
@@ -182,6 +182,73 @@ console.log('\nNot a wording map at all');
 {
   check('array refused', planWebTextUpdate([], {}) === null);
   check('null refused', planWebTextUpdate(null, {}) === null);
+}
+
+console.log('\nStarting counts never overwrite a real one');
+{
+  const existing = {
+    'CA-001': { name: 'Never counted', price: 12, counted: 0, qty: 0 },
+    'CA-002': { name: 'Counted at the shelf', price: 12, counted: 7, qty: 7 },
+    'CA-003': { name: 'Expected but not yet counted', price: 12, counted: 0, qty: 4 },
+    'CA-004': { name: 'No count fields at all', price: 12 }
+  };
+  const sc = planStartCount({
+    'CA-001': { counted: 1, qty: 1, webQty: 1 },
+    'CA-002': { counted: 1, qty: 1, webQty: 1 },
+    'CA-003': { counted: 1, qty: 1, webQty: 1 },
+    'CA-004': { counted: 1, qty: 1, webQty: 1 },
+    'CA-999': { counted: 1, qty: 1 }
+  }, existing);
+
+  check('an uncounted item gets the starting figure', !!sc.change['CA-001']);
+  check('an item counted at the shelf is refused', !sc.change['CA-002']);
+  check('an item with an expected qty is refused too', !sc.change['CA-003']);
+  check('an item with no count fields is treated as uncounted', !!sc.change['CA-004']);
+  check('the refusals are reported', sc.alreadyCounted === 2, 'alreadyCounted=' + sc.alreadyCounted);
+  check('a barcode not on the device is not created',
+    sc.missing === 1 && !sc.change['CA-999']);
+  check('CA-002 keeps its 7', existing['CA-002'].counted === 7 && existing['CA-002'].qty === 7);
+}
+
+console.log('\nStarting counts move webQty in step');
+{
+  // After "tick everything off" the till believes the website shows 0. Raising
+  // counted without raising webQty puts every one of these back on the website
+  // list as "0 -> 1 in stock", which is the flood this is meant to avoid.
+  const sc = planStartCount(
+    { 'CA-001': { counted: 1, qty: 1, webQty: 1 } },
+    { 'CA-001': { name: 'x', counted: 0, qty: 0, web: 1, webQty: 0 } }
+  );
+  const c = sc.change['CA-001'];
+  check('counted, qty and webQty all move together',
+    c.counted === 1 && c.qty === 1 && c.webQty === 1, JSON.stringify(c));
+}
+
+console.log('\nStarting counts cannot reach anything else');
+{
+  const sc = planStartCount({
+    'CA-001': { counted: 1, qty: 1, webQty: 1, name: 'HACKED', price: 0.01,
+                photo: 'javascript:alert(1)', maker: 'Someone else', folder: 'Elsewhere',
+                webPrice: 999 }
+  }, { 'CA-001': { name: 'Real', price: 12, counted: 0, qty: 0 } });
+  const c = sc.change['CA-001'];
+  check('exactly three fields are written', Object.keys(c).length === 3, JSON.stringify(Object.keys(c)));
+  ['name', 'price', 'photo', 'maker', 'folder', 'webPrice']
+    .forEach(f => check('  ' + f + ' is not writable this way', c[f] === undefined));
+}
+
+console.log('\nOnly sensible numbers are accepted');
+{
+  const sc = planStartCount({
+    'A': { counted: -1, qty: 1 },
+    'B': { counted: 1.5, qty: 1 },
+    'C': { counted: 'lots', qty: 1 },
+    'D': { counted: 0, qty: 0, webQty: 0 }
+  }, { A: { name: 'a' }, B: { name: 'b' }, C: { name: 'c' }, D: { name: 'd' } });
+  check('a negative count is refused', sc.change['A'].counted === undefined);
+  check('a fraction is refused', sc.change['B'].counted === undefined);
+  check('a word is refused', sc.change['C'].counted === undefined);
+  check('an explicit zero is allowed through', sc.change['D'].counted === 0);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
