@@ -35,7 +35,7 @@ function check(name, cond, detail) {
 }
 
 const ctx = env();
-const { planItemImport, safeImportPhoto } = ctx;
+const { planItemImport, safeImportPhoto, planWebTextUpdate } = ctx;
 
 console.log('\nAdd-only: nothing already here is touched');
 {
@@ -134,6 +134,54 @@ console.log('\nNot an item map at all');
   check('array refused', planItemImport([{ name: 'x' }], {}) === null);
   check('null refused', planItemImport(null, {}) === null);
   check('string refused', planItemImport('nope', {}) === null);
+}
+
+console.log('\nWebsite wording: writes only the wording, onto items that exist');
+{
+  const existing = {
+    'CA-001': { name: 'Amethyst Wrap Ring', price: 12, counted: 3,
+                photo: 'https://images.sumup.com/a', maker: 'Claire', folder: 'Claire/Jewellery' },
+    'CA-002': { name: 'Already described', price: 5, counted: 1, webDesc: 'the same words' }
+  };
+  const before = JSON.stringify(existing);
+  const up = planWebTextUpdate({
+    'CA-001': { webDesc: 'Elegant and timeless, this handcrafted ring...' },
+    'CA-002': { webDesc: 'the same words' },
+    'CA-999': { webDesc: 'no such item here' }
+  }, existing);
+
+  check('the one with new wording is queued', up.changeCount === 1 && !!up.change['CA-001']);
+  check('an identical description is not a change', up.unchanged === 1, 'unchanged=' + up.unchanged);
+  check('a barcode not on the device is counted, not created',
+    up.missing === 1 && !up.change['CA-999']);
+  check('planning mutates nothing', JSON.stringify(existing) === before);
+}
+
+console.log('\nWebsite wording cannot reach anything that matters');
+{
+  const existing = {
+    'CA-001': { name: 'Real name', price: 12, counted: 3, qty: 3,
+                photo: 'https://images.sumup.com/a', maker: 'Claire', folder: 'Claire/Jewellery' }
+  };
+  // A file trying to smuggle in a price cut, a stock wipe and a new photo
+  // alongside a legitimate description.
+  const up = planWebTextUpdate({
+    'CA-001': { webDesc: 'legitimate wording', name: 'HACKED', price: 0.01,
+                counted: 0, qty: 0, photo: 'javascript:alert(1)', maker: 'Someone else',
+                folder: 'Elsewhere', web: 1, webQty: 99 }
+  }, existing);
+  const changed = up.change['CA-001'];
+  check('the description is taken', changed.webDesc === 'legitimate wording');
+  check('only one field is ever written', Object.keys(changed).length === 1,
+    JSON.stringify(Object.keys(changed)));
+  ['name', 'price', 'counted', 'qty', 'photo', 'maker', 'folder', 'web', 'webQty']
+    .forEach(f => check('  ' + f + ' is not writable this way', changed[f] === undefined));
+}
+
+console.log('\nNot a wording map at all');
+{
+  check('array refused', planWebTextUpdate([], {}) === null);
+  check('null refused', planWebTextUpdate(null, {}) === null);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

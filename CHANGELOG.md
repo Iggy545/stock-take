@@ -9,6 +9,29 @@ fixes.
 
 ---
 
+## v1.10.0 - 25 August 2026, 12:00
+
+### Added
+- **The website's own wording can be brought in for items you already have.** Import a file
+  holding website text and the app writes each description onto the matching item, several
+  hundred at a time, instead of one at a time by hand. It says how many it will change and
+  asks first.
+- This is the only thing that can write to an item that already exists, and it is held to the
+  website description alone. **A name, a price, a count, a photo, a maker or a folder cannot
+  be changed this way**, even if the file tries — worth knowing, because these files are put
+  together outside the app.
+- Items already carrying the same wording are counted as unchanged rather than rewritten, so
+  running the same file twice does nothing the second time.
+
+### Worth knowing
+- Importing new items is unchanged and still adds only. The two jobs are told apart by what is
+  in the file, so an ordinary items file can never start a wording update by accident.
+- `tests/import-items.js` now covers both. As before, every check was confirmed to fail against
+  a deliberately broken copy first — one that let the file write any field it liked, and one
+  that created items the device did not have.
+
+---
+
 ## v1.9.0 - 25 August 2026, 01:19
 
 ### Added

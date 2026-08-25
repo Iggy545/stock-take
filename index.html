@@ -3716,9 +3716,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.10.0';
   const BUILD_DATE  = '25 Aug 2026';
-  const BUILD_TIME  = '01:19';
+  const BUILD_TIME  = '12:00';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -8507,6 +8507,35 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return plan;
   }
 
+  // The website's own wording for items already on this device, under a
+  // separate key so a plain items file can never trigger it by accident.
+  //
+  // This is the ONE thing allowed to write to an item that already exists, and
+  // it is kept to the website columns on purpose: it cannot touch a name, a
+  // price, a count, a photo, a maker or a folder. Descriptions are worth having
+  // in bulk — several hundred of them, written once on the shop window — but
+  // not at the price of a file being able to overwrite a shelf count.
+  var WEB_TEXT_FIELDS = ['webDesc'];
+
+  function planWebTextUpdate(src, existing){
+    if(!src || typeof src !== 'object' || Array.isArray(src)) return null;
+    const plan = { change: {}, changeCount: 0, unchanged: 0, missing: 0, bad: 0 };
+    Object.keys(src).forEach(bc => {
+      const raw = src[bc];
+      if(!raw || typeof raw !== 'object'){ plan.bad++; return; }
+      const it = existing[bc];
+      if(!it){ plan.missing++; return; }
+      const next = {};
+      WEB_TEXT_FIELDS.forEach(f => {
+        const v = raw[f];
+        if(typeof v === 'string' && v.trim() && v !== it[f]) next[f] = v.trim();
+      });
+      if(Object.keys(next).length){ plan.change[bc] = next; plan.changeCount++; }
+      else plan.unchanged++;
+    });
+    return plan;
+  }
+
   document.getElementById('importItemsBtn').addEventListener('click', () => {
     document.getElementById('importItemsInput').click();
   });
@@ -8519,6 +8548,41 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     reader.onload = () => {
       let data;
       try{ data = JSON.parse(reader.result); }catch(err){ showToast('That file is not valid JSON', 'error'); return; }
+
+      // A website-text file is a different job with a different promise, so it
+      // gets its own question rather than being folded into the import count.
+      if(data && data.webText && typeof data.webText === 'object'){
+        const up = planWebTextUpdate(data.webText, items);
+        if(!up || !up.changeCount){
+          showToast(up && up.unchanged
+            ? 'Nothing to change — all ' + up.unchanged + ' already match'
+            : 'No website text found in that file', 'error');
+          return;
+        }
+        const un = [];
+        const one = up.unchanged === 1, oneMissing = up.missing === 1;
+        if(up.unchanged) un.push(up.unchanged + (one ? ' already matches' : ' already match'));
+        if(up.missing) un.push(up.missing + (oneMissing ? ' is' : ' are') + ' not on this device');
+        if(up.bad) un.push(up.bad + ' unreadable');
+        askConfirm(
+          'Add the website wording?',
+          'This writes the website description onto ' + up.changeCount + ' item'
+          + (up.changeCount===1?'':'s') + ' you already have. '
+          + 'Names, prices, counts and photos are not touched.'
+          + (un.length ? ' ' + un.join('. ') + '.' : ''),
+          'Add wording',
+          () => {
+            Object.keys(up.change).forEach(bc => {
+              Object.keys(up.change[bc]).forEach(f => { items[bc][f] = up.change[bc][f]; });
+            });
+            if(!saveItems()) return;
+            renderList(document.getElementById('searchBox').value);
+            showToast(up.changeCount + ' description' + (up.changeCount===1?'':'s') + ' added', 'success');
+          }
+        );
+        return;
+      }
+
       const src = (data && data.items && typeof data.items === 'object') ? data.items : data;
       const plan = planItemImport(src, items);
       if(!plan){ showToast('No items found in that file', 'error'); return; }
