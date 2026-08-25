@@ -9,6 +9,7 @@ not a copy of it that can drift.
 node tests/photos.js index.html
 node tests/website-list.js index.html
 node tests/import-items.js index.html
+node tests/add-item.js index.html
 ```
 
 Both print a pass/fail line per check and exit non-zero on failure.
@@ -18,6 +19,7 @@ Both print a pass/fail line per check and exit non-zero on failure.
 | `photos.js` | Backups keeping their photos, restores not deleting them, Remove photo still working | v1.7.1 |
 | `website-list.js` | What lands on the website list, the wording, ticking off, the `webQty: 0` trap | v1.8.0 |
 | `import-items.js` | Import adding only and never overwriting, the website fields travelling, photo URLs being refused | v1.9.0 |
+| `add-item.js` | A new item starting counted rather than sold out, the website flag and description, no stray fields | v1.12.0 |
 
 ## If a test stops finding the code
 

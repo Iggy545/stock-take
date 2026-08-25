@@ -720,6 +720,23 @@
       <input type="file" id="manualPhotoInput" accept="image/*" style="display:none;">
       <div class="photo-preview" id="manualPhotoPreview" style="display:none;"></div>
       <button class="btn-remove-photo" id="manualPhotoRemove" type="button" style="display:none;">Remove photo</button>
+
+      <label>Website</label>
+      <div class="web-box">
+        <label class="web-check" for="manualWebOn" style="margin:0;">
+          <!-- Ticked by default: every item in the shop sells online, so having
+               to remember this on each new one was a step that only ever got
+               forgotten. Untick it for anything shop-only. -->
+          <input type="checkbox" id="manualWebOn" checked>
+          <span>This one sells on the website too</span>
+        </label>
+        <div id="manualWebMore">
+          <label>Description for the website (optional)</label>
+          <textarea id="manualWebDesc" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."
+            style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);resize:vertical;"></textarea>
+        </div>
+      </div>
+
       <button class="btn btn-primary" id="manualAddBtn">Add item</button>
     </div>
   </div>
@@ -3716,9 +3733,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.11.0';
+  const APP_VERSION = '1.12.0';
   const BUILD_DATE  = '25 Aug 2026';
-  const BUILD_TIME  = '12:10';
+  const BUILD_TIME  = '18:27';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7596,6 +7613,40 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
 
   // ---- Manual add ----
+  // Everything a new item is, in one place and with no DOM in sight, so the
+  // rules can be tested rather than assumed. Same shape as planItemImport and
+  // planStartCount: decide here, apply outside.
+  function newItemRecord(f){
+    const qty = Math.max(0, parseInt(f.qty, 10) || 0);
+    const it = {
+      name: String(f.name || '').trim(),
+      qty: qty,
+      maker: String(f.maker || '').trim(),
+      price: Number(f.price) || 0,
+      folder: f.folder || '',
+      photo: f.photo || '',
+      // An item you are adding is one you are holding, so the starting quantity
+      // IS the count. Left at 0 - which is what this did until v1.12.0 - the
+      // website showed every brand new product as sold out the moment it
+      // appeared, because availability is worked out from counted.
+      counted: qty,
+      addedAt: new Date().toISOString()
+    };
+    if(f.web){
+      it.web = 1;
+      const d = String(f.webDesc || '').trim();
+      if(d) it.webDesc = d;
+      // webQty and webPrice are deliberately NOT set. Absent means "never
+      // listed", which is exactly right - the SumUp store has not got this one
+      // yet, so the website list should be asking you to add it.
+    }
+    return it;
+  }
+
+  document.getElementById('manualWebOn').addEventListener('change', function(){
+    document.getElementById('manualWebMore').style.display = this.checked ? '' : 'none';
+  });
+
   document.getElementById('manualAddBtn').addEventListener('click', () => {
     const bc = document.getElementById('manualBarcode').value.trim();
     const name = document.getElementById('manualName').value.trim();
@@ -7605,10 +7656,18 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const folder = normFolder(document.getElementById('manualFolder').value);
     if(!bc || !name){ showToast('Barcode and name are required', 'error'); return; }
     if(items[bc]){ showToast('That barcode already exists', 'error'); return; }
-    items[bc] = { name, qty, maker, price, folder, photo: manualPhoto.value, counted: 0, addedAt: new Date().toISOString() };
+    items[bc] = newItemRecord({
+      name, qty, maker, price, folder,
+      photo: manualPhoto.value,
+      web: document.getElementById('manualWebOn').checked,
+      webDesc: document.getElementById('manualWebDesc').value
+    });
     if(!saveItems()) return;
     manualPhoto.clear();
-    ['manualBarcode','manualName','manualQty','manualMaker','manualPrice','manualFolder'].forEach(id => document.getElementById(id).value='');
+    ['manualBarcode','manualName','manualQty','manualMaker','manualPrice','manualFolder','manualWebDesc'].forEach(id => document.getElementById(id).value='');
+    // Back to ticked, which is the default for a reason - see the form.
+    document.getElementById('manualWebOn').checked = true;
+    document.getElementById('manualWebMore').style.display = '';
     manualCodeLetter = '';
     document.getElementById('manualBarcodePreview').style.display = 'none';
     renderMakerUi();   // the counts and next-code lines have moved on
