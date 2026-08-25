@@ -34,6 +34,33 @@ fixes.
 
 ---
 
+## v1.12.0 - 25 August 2026, 18:27
+
+### Added
+- **Adding an item now puts it on the website in one go.** The Add form has the same
+  **Website** box the edit screen has, and it is **already ticked**. Untick it for anything
+  that is shop only. Before this, a new product had to be added, then found again in the
+  list, then opened and ticked - which is a step that only ever got forgotten.
+- **A description for the website** on the same form, so you can write it while the thing is
+  in your hand rather than going back for it later.
+
+### Fixed
+- **A new item no longer arrives on the website as sold out.** The starting quantity now
+  sets the counted figure as well. It did not before, and the consequence was worse than it
+  sounds: the website works out available-or-sold-out from the counted figure, so every
+  brand new product appeared online as sold out the moment it was added. An item you are
+  adding is one you are holding.
+
+### Worth knowing
+- **Give it a two-level folder** - `Kay/Bracelets`, not just `Bracelets`. The website takes
+  its category from the second level; the first is the maker's name, which customers never
+  see. A one-level folder means the item only turns up under "Everything".
+- **The website list will still ask you to add it.** That list is about the SumUp store,
+  which is updated by hand. Our own site has it already, within a quarter of an hour.
+- Ticking the box records that the item sells online. It does **not** send anything anywhere.
+
+---
+
 ## v1.11.0 - 25 August 2026, 12:10
 
 ### Added
