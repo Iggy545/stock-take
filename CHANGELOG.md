@@ -9,6 +9,31 @@ fixes.
 
 ---
 
+## v1.13.0 - 25 August 2026, 22:31
+
+### Added
+- **Settings -> Tidy up old deleted records.** Deleting an item does not remove it from the
+  team workspace; it leaves a marker behind so the other till learns the item went. Nothing
+  ever cleared those markers, and by today they were **more than half the workspace - 1044
+  records for 478 items**. Every till reads the whole lot each time it connects, so the
+  markers were costing a database look-up each, per device, per load. That is what used up
+  the free daily allowance and took the shop website down.
+- The tidy-up asks only for the markers rather than the whole collection, so checking costs
+  a look-up per marker instead of one per record.
+
+### Worth knowing
+- **It cannot reach a real item.** A record only qualifies if it is flagged deleted *and*
+  carries no item data. Both conditions, every time, and a test holds each one.
+- **Markers from the last 30 days are kept on purpose.** A till that has not synced since an
+  item was deleted still has that item, and the marker is the only thing that will ever tell
+  it otherwise. Clear the marker too early and that till puts the item back for everybody on
+  its next sync. The confirmation says so, and so does the warning above the button.
+- **Save a backup first, and open both tills before running it.** The one on the screen is
+  not the one at risk.
+- It needs team sync connected, and refuses politely if it is not.
+
+---
+
 ## v1.11.0 - 25 August 2026, 12:10
 
 ### Added

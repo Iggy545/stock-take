@@ -794,6 +794,8 @@
       <button class="btn btn-secondary" id="syncBtn" style="width:100%;">☁ Team sync</button>
       <div class="storage-note" id="syncStatusNote" style="cursor:pointer;"></div>
       <div class="storage-note" id="storageNote"></div>
+      <button class="btn btn-secondary" id="tidySyncBtn" style="width:100%;margin-top:8px;">🧹 Tidy up old deleted records</button>
+      <div class="storage-note" id="tidySyncNote"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Supplier payouts</div>
@@ -3733,9 +3735,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.12.0';
+  const APP_VERSION = '1.13.0';
   const BUILD_DATE  = '25 Aug 2026';
-  const BUILD_TIME  = '18:27';
+  const BUILD_TIME  = '22:31';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -9372,14 +9374,176 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
                  .catch(function(){ setStatus('sync problem','err'); });
     }
 
+    // ---- tidying up tombstones ----
+    //
+    // Every delete leaves a TOMBSTONE: the same document with deleted:true and
+    // no data, so the other devices learn the item went. Nothing ever removes
+    // them. By 25 Aug 2026 the workspace held 1044 documents for 478 items -
+    // well over half of it tombstones - and because a device reads the whole
+    // collection every time it connects, each tombstone cost a Firestore read
+    // per device per load. That is what exhausted the free daily allowance of
+    // 50,000 reads and took the shop website down. See the CHANGELOG for
+    // v1.13.0.
+    //
+    // THE HAZARD, and why this is not simply "delete every deleted:true":
+    //
+    //   A device that has NOT synced since an item was deleted still holds that
+    //   item locally. The tombstone is the only thing that will ever tell it
+    //   otherwise - applyRemoteItem() removes the local copy when it sees one.
+    //   Take the tombstone away and that device's next connect finds the item
+    //   missing from the server, treats it as something the server has not got
+    //   yet, and pushes it straight back up. The deleted item returns, for
+    //   everybody.
+    //
+    // So only tombstones old enough that every device must have seen them are
+    // removed, and the confirmation says so in plain words. A device that has
+    // been off for longer than this was going to cause trouble regardless.
+    var TOMBSTONE_KEEP_DAYS = 30;
+
+    // Asks only for the tombstones, not the whole collection: an equality
+    // filter on `deleted` uses the automatic single-field index, so this costs
+    // one read per tombstone rather than one per document. The age test is done
+    // here rather than in the query because combining it with the equality
+    // would need a composite index that does not exist.
+    async function findTombstones(){
+      if(!connected) throw new Error('Team sync is not connected.');
+      var cut = Date.now() - TOMBSTONE_KEEP_DAYS*86400000;
+      var out = { old:[], recent:0, items:0, sales:0 };
+
+      function scan(snap, which){
+        snap.forEach(function(doc){
+          var d = doc.data() || {};
+          // Belt and braces. Only ever a tombstone: flagged deleted AND
+          // carrying no record. A live item must never be reachable from here.
+          if(d.deleted !== true) return;
+          if(d.data !== undefined && d.data !== null) return;
+          if((Number(d.updatedAt)||0) > cut){ out.recent++; return; }
+          out[which]++;
+          out.old.push(doc.ref);
+        });
+      }
+
+      var got = await Promise.all([
+        itemsCol.where('deleted','==',true).get(),
+        salesCol.where('deleted','==',true).get()
+      ]);
+      scan(got[0], 'items');
+      scan(got[1], 'sales');
+      return out;
+    }
+
+    // Firestore caps a batch at 500 writes.
+    async function deleteTombstones(refs, onProgress){
+      var done = 0;
+      for(var i=0; i<refs.length; i+=450){
+        var slice = refs.slice(i, i+450);
+        var batch = db.batch();
+        slice.forEach(function(ref){ batch.delete(ref); });
+        await batch.commit();
+        done += slice.length;
+        if(onProgress) onProgress(done, refs.length);
+      }
+      return done;
+    }
+
     return {
       connect:connect, disconnect:disconnect, syncNow:syncNow,
       saveSettings:saveSettings, onLocalItems:onLocalItems, onLocalSales:onLocalSales,
       setStatus:setStatus, isOn:isOn, getCfg:getCfg, getTeam:getTeam, getPin:getPin, getEmail:getEmail,
       isConnected:function(){ return connected; },
-      getIdToken:getIdToken
+      getIdToken:getIdToken,
+      keepDays:function(){ return TOMBSTONE_KEEP_DAYS; },
+      findTombstones:findTombstones, deleteTombstones:deleteTombstones
     };
 
+  })();
+
+  // ---- Settings -> Tidy up old deleted records ----
+  //
+  // Housekeeping, not a stock operation: it removes the leftover markers that
+  // deletes leave behind in the team workspace. It cannot touch a real item -
+  // findTombstones only ever returns documents flagged deleted and carrying no
+  // record - but it CAN resurrect one if a device has been offline too long,
+  // which is what the warning is about. Read the long comment on
+  // TOMBSTONE_KEEP_DAYS before changing any of this.
+  (function(){
+    const btn  = document.getElementById('tidySyncBtn');
+    const note = document.getElementById('tidySyncNote');
+    if(!btn) return;
+
+    btn.addEventListener('click', async () => {
+      if(!Sync.isConnected()){
+        showToast('Turn team sync on first — there is nothing to tidy without it', 'error');
+        return;
+      }
+
+      btn.disabled = true;
+      note.textContent = 'Looking…';
+      let found;
+      try{
+        found = await Sync.findTombstones();
+      }catch(e){
+        note.textContent = '';
+        btn.disabled = false;
+        showToast('Could not check: ' + (e && e.message ? e.message : 'unknown problem'), 'error');
+        return;
+      }
+      btn.disabled = false;
+
+      const n = found.old.length;
+      const days = Sync.keepDays();
+      if(!n){
+        note.textContent = found.recent
+          ? 'Nothing old enough to clear yet — ' + found.recent + ' from the last ' + days + ' days are being kept on purpose.'
+          : 'Nothing to clear.';
+        return;
+      }
+
+      const parts = [];
+      if(found.items) parts.push(found.items + ' deleted item' + (found.items===1?'':'s'));
+      if(found.sales) parts.push(found.sales + ' deleted sale' + (found.sales===1?'':'s'));
+
+      note.innerHTML = '';
+      const warn = document.createElement('div');
+      warn.className = 'storage-note';
+      warn.style.marginTop = '6px';
+      warn.textContent = 'Save a backup first, and make sure BOTH tills have been opened '
+        + 'and synced recently. Any device that has not synced for over ' + days
+        + ' days could put these items back.';
+      const bk = document.createElement('button');
+      bk.className = 'btn btn-secondary';
+      bk.style.cssText = 'width:100%;margin-top:6px;';
+      bk.textContent = '💾 Save a backup first';
+      bk.addEventListener('click', () => { document.getElementById('backupBtn').click(); });
+      note.appendChild(warn);
+      note.appendChild(bk);
+
+      askConfirm(
+        'Tidy up old deleted records?',
+        'This removes ' + parts.join(' and ') + ' left over from things deleted more than '
+        + days + ' days ago. Your stock is not touched — these are only the markers that say '
+        + 'something was deleted, and they are what makes the shop slow and expensive to load. '
+        + (found.recent ? found.recent + ' newer ones are kept, so a recent deletion still reaches the other till. ' : '')
+        + 'A till that has not been opened in over ' + days + ' days may put those items back when it next syncs.',
+        'Tidy up',
+        async () => {
+          btn.disabled = true;
+          note.textContent = 'Clearing…';
+          try{
+            const done = await Sync.deleteTombstones(found.old, (d, t) => {
+              note.textContent = 'Clearing… ' + d + ' of ' + t;
+            });
+            note.textContent = done + ' old record' + (done===1?'':'s') + ' cleared. '
+              + 'The tills and the website will load faster from now on.';
+            showToast(done + ' old record' + (done===1?'':'s') + ' cleared', 'success');
+          }catch(e){
+            note.textContent = '';
+            showToast('Could not finish: ' + (e && e.message ? e.message : 'unknown problem'), 'error');
+          }
+          btn.disabled = false;
+        }
+      );
+    });
   })();
 
   // Wrap the savers so every local change is mirrored to the team workspace.

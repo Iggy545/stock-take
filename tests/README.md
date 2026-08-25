@@ -10,6 +10,7 @@ node tests/photos.js index.html
 node tests/website-list.js index.html
 node tests/import-items.js index.html
 node tests/add-item.js index.html
+node tests/tombstones.js index.html
 ```
 
 Both print a pass/fail line per check and exit non-zero on failure.
@@ -20,6 +21,7 @@ Both print a pass/fail line per check and exit non-zero on failure.
 | `website-list.js` | What lands on the website list, the wording, ticking off, the `webQty: 0` trap | v1.8.0 |
 | `import-items.js` | Import adding only and never overwriting, the website fields travelling, photo URLs being refused | v1.9.0 |
 | `add-item.js` | A new item starting counted rather than sold out, the website flag and description, no stray fields | v1.12.0 |
+| `tombstones.js` | The sync tidy-up: that it can only ever reach a tombstone and never a live item, and that recent deletions are kept | v1.13.0 |
 
 ## If a test stops finding the code
 
