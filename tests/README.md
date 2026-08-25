@@ -8,6 +8,7 @@ not a copy of it that can drift.
 ```bash
 node tests/photos.js index.html
 node tests/website-list.js index.html
+node tests/import-items.js index.html
 ```
 
 Both print a pass/fail line per check and exit non-zero on failure.
@@ -16,6 +17,7 @@ Both print a pass/fail line per check and exit non-zero on failure.
 |---|---|---|
 | `photos.js` | Backups keeping their photos, restores not deleting them, Remove photo still working | v1.7.1 |
 | `website-list.js` | What lands on the website list, the wording, ticking off, the `webQty: 0` trap | v1.8.0 |
+| `import-items.js` | Import adding only and never overwriting, the website fields travelling, photo URLs being refused | v1.9.0 |
 
 ## If a test stops finding the code
 

@@ -3716,9 +3716,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.8.0';
-  const BUILD_DATE  = '24 Aug 2026';
-  const BUILD_TIME  = '23:05';
+  const APP_VERSION = '1.9.0';
+  const BUILD_DATE  = '25 Aug 2026';
+  const BUILD_TIME  = '01:19';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -8429,10 +8429,84 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // A complete snapshot: stock, photos, sales and the QR numbering. This is the
   // ONLY way the data leaves this device — the app file itself carries no data.
   // Use it to move to a new phone, or to hand the list over to someone else.
-  // ---- Import items ----
-  // Merges items from a JSON file into the stock list. Barcodes that already
-  // exist are left untouched — only new ones are added, so it is safe to run
-  // the same file twice. Accepts {items:{...}} or a plain {barcode:{...}} map.
+  /* ===================== Import items =====================
+     Merges items from a JSON file into the stock list. This ADDS ONLY. A
+     barcode already on this device is left exactly as it is — not merged into,
+     not overwritten — so the same file can be run twice and the second run does
+     nothing, and an import can never cost you a count, a photo or a sale.
+     That is the difference between this and Restore, which replaces everything.
+
+     Accepts {items:{...}} or a plain {barcode:{...}} map, so a backup file
+     works as an import and only its items are read. */
+
+  // A photo is an embedded data: image or a hosted https:// one and nothing
+  // else. An import file comes from outside, and every one of these strings
+  // ends up in an <img src> — so a javascript: or data:text/html value has to
+  // be dropped here rather than trusted. Matches the photo row in SHARED.md.
+  function safeImportPhoto(v){
+    if(typeof v !== 'string') return '';
+    const s = v.trim();
+    if(/^data:image\//i.test(s)) return s;
+    if(/^https:\/\//i.test(s)) return s;
+    return '';
+  }
+
+  // Works out everything an import would do without doing any of it, so the
+  // numbers in the confirm box are by construction the ones that get applied.
+  // Pure: touches no DOM, saves nothing. Returns null if the file holds no
+  // usable item map at all.
+  function planItemImport(src, existing){
+    if(!src || typeof src !== 'object' || Array.isArray(src)) return null;
+    const plan = { add: {}, addCount: 0, skipped: 0, bad: 0, droppedPhoto: 0, sameName: [] };
+    const byName = {};
+    Object.keys(existing || {}).forEach(bc => {
+      const k = String((existing[bc] && existing[bc].name) || '').trim().toLowerCase();
+      if(k) byName[k] = bc;
+    });
+    Object.keys(src).forEach(bc => {
+      const raw = src[bc];
+      if(!String(bc).trim() || !raw || typeof raw !== 'object' || !raw.name){ plan.bad++; return; }
+      if(existing && existing[bc]){ plan.skipped++; return; }
+      const it = {
+        name: String(raw.name),
+        qty: parseInt(raw.qty,10) || 0,
+        maker: String(raw.maker||''),
+        price: Number(raw.price) || 0,
+        folder: normFolder(raw.folder),
+        photo: safeImportPhoto(raw.photo),
+        counted: parseInt(raw.counted,10) || 0,
+        addedAt: new Date().toISOString()
+      };
+      if(raw.photo && !it.photo) plan.droppedPhoto++;
+      // What the website is already showing. An item imported off the shop
+      // window is by definition listed over there, and saying so here is what
+      // stops the website list opening with dozens of false "put it on the
+      // website" jobs for things that have been on it for months.
+      // webQty 0 is a real value — a site showing sold out — so these are
+      // tested for presence, never for truthiness. See SHARED.md.
+      if(raw.web) it.web = 1;
+      if(raw.webQty !== undefined && raw.webQty !== null && isFinite(Number(raw.webQty))){
+        it.webQty = Number(raw.webQty);
+      }
+      if(raw.webPrice !== undefined && raw.webPrice !== null && isFinite(Number(raw.webPrice))){
+        it.webPrice = Number(raw.webPrice);
+      }
+      if(typeof raw.webDesc === 'string' && raw.webDesc.trim()) it.webDesc = raw.webDesc;
+      // Carry a set rule in; dangling ones are ignored by setMembers() until
+      // the partner arrives too.
+      if(raw.set && Array.isArray(raw.set.with) && Number(raw.set.price) > 0){
+        it.set = { with: raw.set.with.map(String), price: Number(raw.set.price) };
+      }
+      // Not a reason to refuse — the shop really does have two "Macrame
+      // Bracelet" rows — but worth saying before several dozen land at once.
+      const nk = it.name.trim().toLowerCase();
+      if(byName[nk]) plan.sameName.push(it.name);
+      plan.add[bc] = it;
+      plan.addCount++;
+    });
+    return plan;
+  }
+
   document.getElementById('importItemsBtn').addEventListener('click', () => {
     document.getElementById('importItemsInput').click();
   });
@@ -8441,39 +8515,37 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     e.target.value = '';
     if(!file) return;
     const reader = new FileReader();
+    reader.onerror = () => showToast('Could not read that file', 'error');
     reader.onload = () => {
       let data;
       try{ data = JSON.parse(reader.result); }catch(err){ showToast('That file is not valid JSON', 'error'); return; }
       const src = (data && data.items && typeof data.items === 'object') ? data.items : data;
-      if(!src || typeof src !== 'object' || Array.isArray(src)){ showToast('No items found in that file', 'error'); return; }
-      let added = 0, skipped = 0, bad = 0;
-      Object.keys(src).forEach(bc => {
-        const raw = src[bc];
-        if(!raw || typeof raw !== 'object' || !raw.name){ bad++; return; }
-        if(items[bc]){ skipped++; return; }
-        items[bc] = {
-          name: String(raw.name),
-          qty: parseInt(raw.qty,10) || 0,
-          maker: String(raw.maker||''),
-          price: Number(raw.price) || 0,
-          folder: normFolder(raw.folder),
-          photo: (typeof raw.photo === 'string') ? raw.photo : '',
-          counted: parseInt(raw.counted,10) || 0,
-          addedAt: new Date().toISOString()
-        };
-        // Carry a set rule across a restore; dangling ones are ignored by
-        // setMembers() until the partner is restored too.
-        if(raw.set && Array.isArray(raw.set.with) && Number(raw.set.price) > 0){
-          items[bc].set = { with: raw.set.with.map(String), price: Number(raw.set.price) };
+      const plan = planItemImport(src, items);
+      if(!plan){ showToast('No items found in that file', 'error'); return; }
+      if(!plan.addCount){
+        showToast(plan.skipped
+          ? 'Nothing new — all ' + plan.skipped + ' are already here'
+          : 'No items found in that file', 'error');
+        return;
+      }
+      const notes = [];
+      if(plan.skipped) notes.push(plan.skipped + ' already here, left as they are');
+      if(plan.sameName.length) notes.push(plan.sameName.length + ' share a name with something already on the list');
+      if(plan.droppedPhoto) notes.push(plan.droppedPhoto + ' had a photo that was not a data: or https: image, so it was dropped');
+      if(plan.bad) notes.push(plan.bad + ' unreadable');
+      askConfirm(
+        'Import these items?',
+        'This adds ' + plan.addCount + ' new item' + (plan.addCount===1?'':'s') + '. '
+        + 'Nothing already on this device is changed or removed.'
+        + (notes.length ? ' ' + notes.join('. ') + '.' : ''),
+        'Import',
+        () => {
+          Object.keys(plan.add).forEach(bc => { items[bc] = plan.add[bc]; });
+          if(!saveItems()) return;
+          renderList(document.getElementById('searchBox').value);
+          showToast(plan.addCount + ' item' + (plan.addCount===1?'':'s') + ' imported', 'success');
         }
-        added++;
-      });
-      if(added && !saveItems()) return;
-      renderList(document.getElementById('searchBox').value);
-      let msg = added + ' item' + (added===1?'':'s') + ' imported';
-      if(skipped) msg += ', ' + skipped + ' already existed';
-      if(bad) msg += ', ' + bad + ' unreadable';
-      showToast(msg, added ? 'success' : 'error');
+      );
     };
     reader.readAsText(file);
   });

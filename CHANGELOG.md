@@ -9,6 +9,34 @@ fixes.
 
 ---
 
+## v1.9.0 - 25 August 2026, 01:19
+
+### Added
+- **Import items now says what it is about to do, and asks first.** It shows how many are
+  new, how many are already on this device, and how many share a name with something on the
+  list, then waits. The numbers in the box are worked out from the same plan that gets
+  applied, so what it says is what happens.
+- **An import carries the website fields across** — *sells on the website*, and the quantity
+  and price the website is showing. Items brought in from the shop window now arrive already
+  knowing they are listed, so the website list stays quiet instead of filling with dozens of
+  *Put it on the website* jobs for things that have been on it for months.
+
+### Changed
+- **Photos in an import file must be a `data:image/...` or `https://` image.** Anything else
+  is dropped and the item comes in without a photo, and the confirm box says how many. An
+  import file comes from outside the app and every one of those strings ends up in an image
+  tag.
+
+### Worth knowing
+- Import has always added only, and still does: a barcode already on the device is left
+  exactly as it is, never overwritten and never merged into. Running the same file twice does
+  nothing the second time. This is the opposite of **Restore**, which replaces everything —
+  use Import to add, Restore only to put a whole device back.
+- Covered by `tests/import-items.js`, which runs the real code out of `index.html`. Each
+  check was confirmed to fail against a deliberately broken copy before being kept.
+
+---
+
 ## v1.8.0 - 24 August 2026, 23:05
 
 ### Added
