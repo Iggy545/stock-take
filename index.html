@@ -3735,9 +3735,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.13.0';
-  const BUILD_DATE  = '25 Aug 2026';
-  const BUILD_TIME  = '22:31';
+  const APP_VERSION = '1.14.0';
+  const BUILD_DATE  = '26 Aug 2026';
+  const BUILD_TIME  = '01:58';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4362,13 +4362,65 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const s = String(v || '');
     return /^(data:image\/|https:\/\/)/i.test(s) ? escapeAttr(s) : '';
   }
+
+  // WE HOLD OUR OWN COPIES OF THE PHOTOGRAPHS NOW. Prefer them.
+  //
+  // Nearly every item's photo field is still a link to images.sumup.com,
+  // because that is where the pictures were taken and the till only ever
+  // stored the address. SumUp DELETES the image when its listing is deleted -
+  // 40 went that way before anyone noticed - and closing the SumUp store, which
+  // is the last step of the website plan, would take every remaining one down
+  // at once.
+  //
+  // So all 477 were archived and re-published at our own domain, and this turns
+  // the stored SumUp address into ours at DISPLAY time. The record is left
+  // alone on purpose: nothing is migrated, nothing syncs, and deleting these
+  // few lines puts the app back exactly as it was.
+  //
+  // They are also about a tenth of the size - the SumUp originals are 640px
+  // PNGs at most of a megabyte each, ours are the same picture as WebP - which
+  // is why the list feels quicker on shop wifi.
+  const OWN_PHOTO_BASE = 'https://soulful-angels-oracleshop.co.uk/img/';
+
+  // The name is SumUp's own image id, which is what tools/photo-archive.py
+  // saved each file under. Deliberately strict: only a bare img_ id, or we
+  // would rewrite an address we never archived and show a broken picture
+  // instead of a working one.
+  function ownPhotoSrc(v){
+    const m = /^https:\/\/images\.sumup\.com\/(img_[A-Za-z0-9]+)\//.exec(String(v || ''));
+    return m ? OWN_PHOTO_BASE + m[1] + '.webp' : '';
+  }
+
+  // Our copy first, the original underneath it. A photograph taken since the
+  // last publish has no copy of ours, and a thumbnail that is blank because we
+  // got clever is worse than a slow one.
+  //
+  // Note what "missing" actually looks like, because it is NOT a 404: Pages
+  // answers an unknown path with the site's own page, HTTP 200 and text/html.
+  // The <img> then fails to DECODE that, which fires error just the same. The
+  // handler below is what swaps it back, and it was watched doing so.
   function thumbHtml(it){
     const src = it ? safePhotoSrc(it.photo) : '';
-    if(src){
-      return `<img class="thumb" src="${src}" alt="">`;
+    if(!src) return `<div class="thumb-empty">📦</div>`;
+    const own = it ? ownPhotoSrc(it.photo) : '';
+    if(own){
+      return `<img class="thumb" src="${escapeAttr(own)}" data-photo-fallback="${src}" alt="">`;
     }
-    return `<div class="thumb-empty">📦</div>`;
+    return `<img class="thumb" src="${src}" alt="">`;
   }
+
+  // One handler for every picture in the app, in the CAPTURE phase because an
+  // <img> error event does not bubble. No inline onerror anywhere: this file
+  // builds thumbnails as HTML strings, and an onerror attribute carrying a URL
+  // is the exact shape of the hole that was closed in v1.5.3.
+  document.addEventListener('error', function(e){
+    const el = e.target;
+    if(!el || el.tagName !== 'IMG') return;
+    const fb = el.getAttribute('data-photo-fallback');
+    if(!fb) return;
+    el.removeAttribute('data-photo-fallback');  // once only, never a loop
+    el.src = fb;
+  }, true);
 
   function escapeHtml(str){
     const d = document.createElement('div');
@@ -4519,7 +4571,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     function render(){
       if(state.value){
-        preview.innerHTML = `<img src="${safePhotoSrc(state.value)}" alt="">`;
+        // Same preference as the list: our copy, the original as the fallback.
+        const src = safePhotoSrc(state.value);
+        const own = ownPhotoSrc(state.value);
+        preview.innerHTML = own
+          ? `<img src="${escapeAttr(own)}" data-photo-fallback="${src}" alt="">`
+          : `<img src="${src}" alt="">`;
         preview.style.display = 'block';
         remove.style.display = 'block';
       } else {

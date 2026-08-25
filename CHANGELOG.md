@@ -9,6 +9,32 @@ fixes.
 
 ---
 
+## v1.14.0 - 26 August 2026, 01:58
+
+### Changed
+- **The shop's photographs are now our own, and the app shows those.** Nearly every item's
+  picture was never held here at all - the record stored a *link* to an image on SumUp's
+  servers, and nothing else. **SumUp deletes that image when its listing is deleted.** Forty
+  had already gone that way, and closing the SumUp store - the last step of the website plan
+  - would have taken every remaining one down at once, with nothing anywhere to restore.
+- All 477 photographs were downloaded, kept as masters, and republished at the shop's own
+  address. The app now asks for ours when it draws a thumbnail.
+- **They are about a tenth of the size**, so the stock list loads noticeably quicker on shop
+  wifi. The originals were 640-pixel pictures saved as PNG, a format meant for flat-colour
+  graphics rather than photographs; the same picture as WebP is a fraction of the weight and
+  looks identical.
+
+### Worth knowing
+- **Nothing in your data changed.** The swap happens when a picture is drawn, not in the
+  record. No sync, no migration, nothing to go wrong on the other till.
+- **A photograph taken since this went out has no copy of ours yet**, so the app quietly
+  falls back to the original. Nothing breaks; it is just the old, slower picture until the
+  next publish.
+- **The till was the last thing tied to SumUp's servers.** The website was moved earlier the
+  same night. Closing the SumUp store is now safe to do, which it was not before.
+
+---
+
 ## v1.13.0 - 25 August 2026, 22:31
 
 ### Added
