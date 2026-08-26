@@ -9,6 +9,34 @@ fixes.
 
 ---
 
+## v1.15.0 - 26 August 2026, 09:41
+
+### Changed
+- **Opening the app no longer re-reads the whole shop from the database.** With team sync
+  on, every load used to fetch every record and every deleted-record marker - around five
+  hundred documents - however little had changed since the last time. It now asks one
+  cheap question first: what is the most recently changed record? If nothing has moved, the
+  same records are read from the copy already on the device instead.
+- **A normal load costs one read instead of about five hundred.**
+
+### Why this mattered
+- The database's free daily allowance is 50,000 reads and the website's shop page is
+  budgeted 40,000 of it, which left the till roughly **twenty app loads a day**. Two people
+  on a shop day went through that, and when the allowance ran out **the website's shop page
+  went down** - which is exactly what happened on 25 August.
+- Nothing about your data changed, and nothing syncs differently. The app reads the same
+  records; it just stops paying for them twice.
+
+### Worth knowing
+- **It re-reads properly whenever it should.** Anything changed on another device, a
+  different team code, a cleared browser, or the database declining to answer all send it
+  back to a full read. The rule is that not knowing is never treated as nothing-has-changed.
+- If the device cannot keep a local copy at all - some private-browsing modes, or the same
+  workspace open in several tabs - the app works exactly as before and now says so in the
+  browser console instead of staying silent about it.
+
+---
+
 ## v1.14.0 - 26 August 2026, 01:58
 
 ### Changed

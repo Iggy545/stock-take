@@ -12,9 +12,11 @@ node tests/import-items.js index.html
 node tests/add-item.js index.html
 node tests/tombstones.js index.html
 node tests/own-photos.js index.html
+node tests/read-policy.js index.html
+node tests/reconcile-reads.js index.html
 ```
 
-Both print a pass/fail line per check and exit non-zero on failure.
+Each prints a pass/fail line per check and exits non-zero on failure.
 
 | File | Covers | Added |
 |---|---|---|
@@ -24,6 +26,8 @@ Both print a pass/fail line per check and exit non-zero on failure.
 | `add-item.js` | A new item starting counted rather than sold out, the website flag and description, no stray fields | v1.12.0 |
 | `tombstones.js` | The sync tidy-up: that it can only ever reach a tombstone and never a live item, and that recent deletions are kept | v1.13.0 |
 | `own-photos.js` | Preferring our own copies of the photographs over SumUp's, the fallback for anything we did not archive, and the v1.5.3 escaping hole staying shut | v1.14.0 |
+| `read-policy.js` | Whether a connect may read from the local cache: the team-code switch, a cleared cache, and a refusal never being read as nothing-has-changed | v1.15.0 |
+| `reconcile-reads.js` | The real `reconcile()` against a fake Firestore — that the cheap path costs one read, and that it ends in **identical** shadow state to the full read | v1.15.0 |
 
 ## If a test stops finding the code
 
@@ -33,7 +37,9 @@ with a message rather than silently passing.
 
 ## Worth knowing
 
-Both suites were checked against the commit *before* the fix as well as after, so they
-are known to actually catch the thing they describe. A test that has never failed has
+Every suite here was checked against deliberately broken copies as well as the real
+file, so each is known to actually catch the thing it describes. `read-policy.js` found
+one of its own checks useless that way — it passed for the wrong reason until the case
+was sharpened — which is the whole argument for doing it. A test that has never failed has
 not been shown to work. `git show HEAD~1:index.html > /tmp/before.html` and run against
 that.

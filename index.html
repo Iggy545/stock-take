@@ -3735,9 +3735,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.14.0';
+  const APP_VERSION = '1.15.0';
   const BUILD_DATE  = '26 Aug 2026';
-  const BUILD_TIME  = '01:58';
+  const BUILD_TIME  = '09:41';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -9061,13 +9061,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   var Sync = (function(){
     var CFG_KEY='stockTakeSyncCfg', TEAM_KEY='stockTakeSyncTeam', PIN_KEY='stockTakeSyncPin',
         TIMES_KEY='stockTakeSyncTimes', ON_KEY='stockTakeSyncOn', CID_KEY='stockTakeClientId',
-        EMAIL_KEY='stockTakeSyncEmail';
+        EMAIL_KEY='stockTakeSyncEmail', MARK_KEY='stockTakeSyncMark';
     var SDK_APP ='https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js';
     var SDK_FS  ='https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js';
     var SDK_AUTH='https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js';
 
     var app=null, db=null, itemsCol=null, salesCol=null, metaDoc=null;
     var listeners=[], connected=false, connecting=false;
+    var persistenceOK=false;                // did the local cache switch on?
     var shadowItems={}, shadowSales={};     // last-known-synced serialization
     // Meta gets its own shadow rather than a reserved key inside shadowItems.
     // It used to live at shadowItems.__meta, but pushItems() sweeps
@@ -9101,6 +9102,52 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     function docSafe(s){ return String(s||'').replace(/[\/\.\#\$\[\]]/g,'_').slice(0,120); }
     function workspacePath(){ var t=docSafe(getTeam()); var p=getPin(); return p ? t+'~'+docSafe(p) : t; }
+
+    // ---- how much of the database a connect has to read ----
+    //
+    // reconcile() used to open with an unqualified itemsCol.get(). In this SDK
+    // that means "ask the server", and Firestore bills one read per document
+    // returned. The workspace holds a document per item plus a tombstone per
+    // deletion, so EVERY app load with sync on cost around five hundred reads
+    // no matter how little had changed. The free allowance is 50,000 a day and
+    // the shop Worker is budgeted 40,000 of it, which left the till about
+    // twenty loads before the whole shop went dark. On 25 August 2026 it did.
+    //
+    // The Worker had already solved this and the till borrows its trick: ask
+    // ONE cheap question first. Every document carries updatedAt, so reading
+    // the single newest one costs one read and answers "has anything moved?".
+    // When nothing has, the same documents come from the local cache instead
+    // and the connect costs one read rather than five hundred.
+    //
+    // Both of these are pure on purpose -- no Firestore, no DOM, no storage --
+    // because the bug behind that outage lived in code that could not be
+    // tested where it sat. tests/read-policy.js runs exactly these functions.
+
+    // memo is what the last successful reconcile saw, and it is keyed by
+    // workspace on purpose: pointing a device at a different team code must
+    // never reuse the mark from the old one, or the connect that is supposed
+    // to discover a whole different shop would be skipped.
+    function planReconcile(ws, mark, memo, canCache){
+      if(!canCache)                return { source:'server', why:'no local cache to read from' };
+      if(!memo || memo.ws !== ws)  return { source:'server', why:'first connect to this workspace' };
+      if(!mark || mark.ok !== true)return { source:'server', why:'could not read the watermark' };
+      if(mark.mark === null)       return { source:'server', why:'there is no watermark to compare' };
+      if(String(memo.mark) !== String(mark.mark))
+                                   return { source:'server', why:'something has changed' };
+      return { source:'cache', why:'nothing has changed' };
+    }
+
+    // The cache may only build the shadow if it holds as many documents as the
+    // last server read did. Clearing site data empties it WITHOUT moving the
+    // watermark, and a shadow built from a short cache reads as "the server is
+    // missing all of this" -- which would push the entire stock list back up.
+    // It catches the same thing when persistence never switched on, where a
+    // cache read simply comes back empty.
+    function cacheLooksComplete(memo, itemCount, saleCount){
+      if(!memo) return false;
+      return Number(memo.items) === Number(itemCount)
+          && Number(memo.sales) === Number(saleCount);
+    }
 
     // ---- status display ----
     function setStatus(text, kind){
@@ -9280,15 +9327,54 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     function detach(){ listeners.forEach(function(u){ try{ u(); }catch(e){} }); listeners=[]; }
 
     // ---- one-off reconcile at connect: merge remote, then push local ----
+    // The one cheap question, and the only new read this file makes. Ordering
+    // by a field every document carries needs no composite index. A failure is
+    // deliberately not fatal: it answers "could not ask", which sends the
+    // reconcile to the server exactly as it always went.
+    async function readWatermark(){
+      try{
+        var s=await itemsCol.orderBy('updatedAt','desc').limit(1).get();
+        if(s.empty) return { ok:true, mark:null };
+        var d=s.docs[0].data();
+        var v=d && d.updatedAt;
+        return { ok:true, mark:(v===undefined||v===null)?null:String(v) };
+      }catch(e){ return { ok:false, mark:null }; }
+    }
+
+    function readMemo(){
+      try{ var o=JSON.parse(localStorage.getItem(MARK_KEY)); return (o&&typeof o==='object')?o:null; }
+      catch(e){ return null; }
+    }
+    function writeMemo(m){ try{ localStorage.setItem(MARK_KEY, JSON.stringify(m)); }catch(e){} }
+
     async function reconcile(){
       // Keep the raw remote docs, not just their effect on local state: the
       // shadow below has to be built from them.
-      var isnap=await itemsCol.get();
+      //
+      // Where they are read FROM is decided by planReconcile above. Both paths
+      // hand back the same documents in the same shape -- this changes what
+      // the read costs, never what it says.
+      var ws=workspacePath();
+      var mark=await readWatermark();
+      var plan=planReconcile(ws, mark, readMemo(), persistenceOK);
+      var isnap=null, ssnap=null;
+      if(plan.source==='cache'){
+        isnap=await itemsCol.get({source:'cache'});
+        ssnap=await salesCol.get({source:'cache'});
+        if(!cacheLooksComplete(readMemo(), isnap.size, ssnap.size)){
+          plan={ source:'server', why:'the local cache was short' };
+          isnap=null; ssnap=null;
+        }
+      }
+      if(plan.source!=='cache'){
+        isnap=await itemsCol.get();
+        ssnap=await salesCol.get();
+      }
+
       var remoteItems={};
       isnap.forEach(function(doc){ var d=doc.data(); if(d) remoteItems[(d && d.key) || doc.id]=d; });
       Object.keys(remoteItems).forEach(function(k){ applyRemoteItem(k, remoteItems[k]); });
 
-      var ssnap=await salesCol.get();
       var remoteSales={};
       ssnap.forEach(function(doc){ var d=doc.data(); if(d) remoteSales[(d && d.key) || doc.id]=d; });
       Object.keys(remoteSales).forEach(function(k){ applyRemoteSale(k, remoteSales[k]); });
@@ -9320,6 +9406,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       // shadowItems: applyRemoteMeta has just merged whatever the server
       // held, so the next pushMeta re-asserts this device's view once.
       shadowMeta='';
+
+      // What this read saw, so the next connect can ask the cheap question.
+      // Only when the watermark was actually answered -- a memo written from a
+      // failed read would skip a real reconcile later on. pushItems() below may
+      // move the watermark again, which simply costs the next connect a full
+      // read: wrong in the safe direction.
+      if(mark.ok) writeMemo({ ws:ws, mark:mark.mark, items:isnap.size, sales:ssnap.size });
 
       connected=true;
       pushItems(); pushSales();
@@ -9363,7 +9456,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           }
         }
         db = firebase.firestore(app);
-        try{ await db.enablePersistence({synchronizeTabs:true}); }catch(e){ /* multi-tab or unsupported: fine */ }
+        // Multi-tab or an unsupported browser is fine and the app works either
+        // way -- but it is NOT nothing. Without the local cache every reconcile
+        // reads the whole workspace from the server, which is the bill that took
+        // the shop down on 25 August 2026. Silence here meant nobody could ever
+        // find that out, so it says so now.
+        try{
+          await db.enablePersistence({synchronizeTabs:true});
+          persistenceOK=true;
+        }catch(e){
+          persistenceOK=false;
+          try{ console.warn('sync: no local cache ('+((e&&e.code)||'unknown')+
+            ') - every connect will read the whole workspace from the server'); }catch(_e){}
+        }
         var ws = db.collection('workspaces').doc(workspacePath());
         itemsCol = ws.collection('items');
         salesCol = ws.collection('sales');
