@@ -9,6 +9,40 @@ fixes.
 
 ---
 
+## v1.20.0 - 28 August 2026, 12:40
+
+### Added
+- **You can now do a stock take one folder at a time.** Tap **New count**, tick one
+  folder, and the Stock list shows only that folder until you say otherwise — with a bar
+  across the top telling you which one you are on and how far through it you are:
+  *"1 of 3 counted · 2 to go · 2 in stock · £40.00"*, with a progress bar.
+- Ticking one folder and tapping **Reset ticked folders only** now drops you straight
+  into that folder, instead of leaving you to find it again in the whole list.
+- There is a second button, **Just work through it — keep the counts**, for carrying on
+  with a folder you have already started rather than wiping it and beginning again.
+- **Tap Show all stock to come back to the whole shop.** Nothing is stuck: the app
+  remembers which folder you are on if you close it and come back, and a full stock take
+  clears it.
+- While you are working through a folder, **searching searches inside that folder**, and
+  scanning something that lives somewhere else still counts it but says so —
+  *"Selenite tower → now 5 — not in 📁 Bracelets"* — so a stray tray gets noticed.
+- Something unknown scanned while you are in a folder now starts with that folder
+  already filled in on the new item form.
+
+### Worth knowing
+- **This only changes the Stock list.** The Till still sells the whole shop, sales and
+  exports are unaffected, and the counts themselves are the same numbers as ever.
+- **It is this device only.** The phone can work through Bracelets while the till shows
+  everything — it is not sent to your other devices, in the same way that which folders
+  are open is not.
+- **"Counted" means the item has a number against it.** The app cannot tell a genuine
+  zero from one nobody has reached yet — it never has — so the bar counts an item as
+  done once it has been given a count, and the wording says exactly that.
+- If every item in the folder you are on is moved out or deleted, the app steps back to
+  showing all stock and tells you why.
+
+---
+
 ## v1.19.0 - 28 August 2026, 11:05
 
 ### Added

@@ -330,6 +330,33 @@
     background:var(--ink);color:var(--paper);
     border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;
   }
+
+  /* Working through one folder: what is being counted and how far in it is */
+  .count-focus{
+    background:var(--clay);color:#fff;
+    border-radius:var(--radius);padding:13px 15px;margin-bottom:12px;
+  }
+  .cf-top{display:flex;align-items:center;gap:10px;}
+  .cf-label{
+    font-size:11px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.8;
+  }
+  .cf-name{
+    font-size:17px;font-weight:700;margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cf-clear{
+    flex:none;margin-left:auto;font:inherit;font-size:12px;font-weight:700;
+    background:rgba(255,255,255,0.18);color:#fff;border:0;
+    border-radius:999px;padding:11px 14px;cursor:pointer;
+  }
+  .cf-clear:active{background:rgba(255,255,255,0.3);}
+  .cf-track{
+    height:7px;border-radius:999px;background:rgba(255,255,255,0.25);
+    margin:11px 0 8px;overflow:hidden;
+  }
+  .cf-fill{display:block;height:100%;background:#fff;border-radius:999px;transition:width .2s ease;}
+  .cf-line{font-size:12px;line-height:1.5;opacity:0.95;}
+  .cf-done{font-weight:700;}
   .value-label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.65;}
   .value-figure{font-size:20px;font-weight:700;margin-top:3px;}
   .item-price{font-size:11px;color:var(--muted);margin-top:2px;}
@@ -667,6 +694,17 @@
       </span>
       <span class="n" id="webBannerCount">0</span>
     </button>
+    <div class="count-focus" id="countFocusBar" style="display:none;">
+      <div class="cf-top">
+        <div style="min-width:0;">
+          <div class="cf-label">Counting</div>
+          <div class="cf-name" id="cfName"></div>
+        </div>
+        <button type="button" class="cf-clear" id="cfClear">Show all stock</button>
+      </div>
+      <div class="cf-track"><span class="cf-fill" id="cfFill" style="width:0%;"></span></div>
+      <div class="cf-line" id="cfLine"></div>
+    </div>
     <div class="value-summary" id="valueSummary">
       <div>
         <div class="value-label">Stock on hand value</div>
@@ -1046,6 +1084,11 @@
     <div class="empty-state" id="ncEmpty" style="display:none;padding:14px;">No folders yet — use the Folder box when adding items.</div>
     <div id="ncFolderList"></div>
     <button class="btn btn-primary" id="ncPartialBtn" style="width:100%;margin-top:10px;">Reset ticked folders only</button>
+    <button class="btn btn-secondary" id="ncFocusBtn" style="margin-top:8px;">Just work through it — keep the counts</button>
+    <div class="folder-hint" id="ncFocusHint" style="margin:8px 0 0;">
+      Either way the Stock list then shows only that folder, with how far through it you are.
+      Tick one folder to work through.
+    </div>
     <button class="btn btn-secondary" id="ncCancel" style="margin-top:8px;">Cancel</button>
   </div>
 </div>
@@ -3783,9 +3826,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.19.0';
+  const APP_VERSION = '1.20.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '11:05';
+  const BUILD_TIME  = '12:40';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4332,7 +4375,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const barcodes = Object.keys(items);
     const q = (filter||'').trim().toLowerCase();
 
-    const filtered = barcodes.filter(bc => {
+    // Working through one folder narrows the list to it, and a search then
+    // searches inside it rather than dragging the rest of the shop back in.
+    renderCountFocusBar();
+    const inFocus = countFocus === null ? barcodes : itemsUnderFolder(countFocus);
+
+    const filtered = inFocus.filter(bc => {
       if(!q) return true;
       const it = items[bc];
       return it.name.toLowerCase().includes(q) || bc.toLowerCase().includes(q)
@@ -4351,7 +4399,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     emptyEl.style.display = 'none';
 
     if(filtered.length === 0){
-      listEl.innerHTML = '<div class="empty-state">No matches found.</div>';
+      listEl.innerHTML = countFocus === null
+        ? '<div class="empty-state">No matches found.</div>'
+        : `<div class="empty-state">No matches in ${escapeHtml(focusLabel(countFocus))}. Tap <strong>Show all stock</strong> to search the whole shop.</div>`;
       return;
     }
 
@@ -4404,8 +4454,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       listEl.innerHTML = filtered.map(rowHtml).join('');
     } else {
       // Normal view: loose items first, then collapsible folders
-      const tree = buildFolderTree(filtered);
-      listEl.innerHTML = folderTreeHtml(tree, rowHtml, 'stock', '', nameSort);
+      const tree = buildFolderTree(filtered, countFocus);
+      listEl.innerHTML = folderTreeHtml(tree, rowHtml, 'stock', countFocus || '', nameSort);
       bindFolderToggles(listEl, () => renderList(filter));
     }
 
@@ -4546,15 +4596,95 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return Object.keys(set).sort((a,b) => a.localeCompare(b));
   }
 
+  // Every barcode at or under a folder path. '' is not "everything" — it means
+  // the items that are in no folder at all, which is a real thing to count on
+  // its own. null means no folder chosen, and is never passed here.
+  function itemsUnderFolder(path){
+    return Object.keys(items).filter(bc => {
+      const f = itemFolder(items[bc]);
+      if(path === '') return f === '';
+      return f === path || f.indexOf(path + '/') === 0;
+    });
+  }
+
   // How many items sit in a folder, counting anything in its subfolders too —
   // the same number the folder rows on the stock list show.
-  function folderItemCount(path){
-    let n = 0;
-    Object.keys(items).forEach(bc => {
-      const p = itemFolder(items[bc]);
-      if(p === path || p.indexOf(path + '/') === 0) n++;
+  function folderItemCount(path){ return itemsUnderFolder(path).length; }
+
+  // ---- Working through one folder ----
+  // A stock take does not have to be the whole shop in one go: pick a folder
+  // and the Stock list shows only that, with how far through it you are. It is
+  // a way of looking at the list and nothing more — counts, sales, scanning and
+  // sync all carry on shop-wide behind it. That is why it is kept on this
+  // device only, like which folders are open: the other till should not have
+  // its view yanked around because someone here is working through the
+  // bracelets.
+  //
+  // null means no folder chosen. '' is a real choice — the items in no folder
+  // at all — so absent and empty have to stay told apart.
+  const FOCUS_KEY = 'stockTakeCountFocus';
+  let countFocus = null;
+  try{
+    const saved = localStorage.getItem(FOCUS_KEY);
+    if(saved !== null) countFocus = saved;
+  }catch(e){}
+
+  function focusLabel(path){
+    return path === '' ? 'Items in no folder' : '📁 ' + path;
+  }
+  function setCountFocus(path){
+    countFocus = path;
+    try{ localStorage.setItem(FOCUS_KEY, path); }catch(e){}
+    document.getElementById('searchBox').value = '';
+    renderList('');
+  }
+  function clearCountFocus(){
+    countFocus = null;
+    try{ localStorage.removeItem(FOCUS_KEY); }catch(e){}
+    renderList(document.getElementById('searchBox').value);
+  }
+
+  // An item counts as done once it has a number against it. A genuine zero
+  // cannot be told apart from one nobody has reached yet — the app has never
+  // recorded "looked at, found none" separately — so the wording says what is
+  // actually known rather than pretending the difference is there.
+  function renderCountFocusBar(){
+    const bar = document.getElementById('countFocusBar');
+    if(!bar) return;
+    if(countFocus === null){ bar.style.display = 'none'; return; }
+
+    const bcs = itemsUnderFolder(countFocus);
+
+    // The folder emptied out under it — everything moved or deleted. Sitting on
+    // a view of nothing helps nobody, so step back to the whole shop.
+    if(!bcs.length){
+      const gone = focusLabel(countFocus);
+      countFocus = null;
+      try{ localStorage.removeItem(FOCUS_KEY); }catch(e){}
+      bar.style.display = 'none';
+      // Deferred, because whatever emptied the folder — a move, a delete, a
+      // sync — is about to announce itself, and this is the part that explains
+      // why the list suddenly widened.
+      setTimeout(() => showToast('Nothing left in ' + gone + ' — showing all stock', 'success'), 60);
+      return;
+    }
+
+    let done = 0, units = 0, value = 0;
+    bcs.forEach(bc => {
+      const counted = Number(items[bc].counted) || 0;
+      if(counted > 0) done++;
+      units += counted;
+      value += counted * (Number(items[bc].price) || 0);
     });
-    return n;
+    const left = bcs.length - done;
+    const pct = Math.round((done / bcs.length) * 100);
+
+    document.getElementById('cfName').textContent = focusLabel(countFocus);
+    document.getElementById('cfFill').style.width = pct + '%';
+    document.getElementById('cfLine').innerHTML = left === 0
+      ? `<span class="cf-done">${bcs.length === 1 ? 'The one item here has a count.' : 'All ' + bcs.length + ' items have a count.'}</span> ${units} in stock · ${money(value)}`
+      : `${done} of ${bcs.length} counted · <span class="cf-done">${left} to go</span> · ${units} in stock · ${money(value)}`;
+    bar.style.display = 'block';
   }
 
   // The folders already in use, drawn as buttons under a folder box, so a folder
@@ -4597,11 +4727,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
 
   // Nest a list of barcodes into { items:[], sub:{name:node} } by folder path.
-  function buildFolderTree(keys){
+  // stripPath nests from inside that folder rather than from the top of the
+  // shop, so working through Bracelets shows its items and its Beaded subfolder
+  // without a redundant Bracelets row wrapped round the lot.
+  function buildFolderTree(keys, stripPath){
     const root = { items: [], sub: {} };
     keys.forEach(bc => {
       let node = root;
-      const path = itemFolder(items[bc]);
+      let path = itemFolder(items[bc]);
+      if(stripPath !== undefined && stripPath !== null){
+        path = (path === stripPath) ? '' : path.slice(stripPath ? stripPath.length + 1 : 0);
+      }
       if(path){
         path.split('/').forEach(seg => {
           if(!node.sub[seg]) node.sub[seg] = { items: [], sub: {} };
@@ -7266,26 +7402,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   // ---- New session ----
   // New count: either a full stock take, or recount only chosen folders
-  function ncItemsUnder(path){
-    // barcodes at or under a folder path ('' = items not in any folder)
-    return Object.keys(items).filter(bc => {
-      const f = itemFolder(items[bc]);
-      if(path === '') return f === '';
-      return f === path || f.indexOf(path + '/') === 0;
-    });
-  }
   function openNewCountModal(){
     const paths = allFolderPaths();
-    const loose = ncItemsUnder('').length;
+    const loose = itemsUnderFolder('').length;
     const listEl = document.getElementById('ncFolderList');
     const rows = [];
     if(loose) rows.push({ path:'', label:'(Items not in any folder)', n:loose });
     paths.forEach(p => {
-      const n = ncItemsUnder(p).length;
+      const n = itemsUnderFolder(p).length;
       if(n) rows.push({ path:p, label:p, n:n });
     });
     document.getElementById('ncEmpty').style.display = rows.length ? 'none' : 'block';
     document.getElementById('ncPartialBtn').style.display = rows.length ? 'block' : 'none';
+    document.getElementById('ncFocusBtn').style.display = rows.length ? 'block' : 'none';
+    document.getElementById('ncFocusHint').style.display = rows.length ? 'block' : 'none';
     listEl.innerHTML = rows.map((r,i) => `
       <label class="nc-row">
         <input type="checkbox" data-ncpath="${escapeAttr(r.path)}">
@@ -7313,7 +7443,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         sessionDate = new Date().toISOString();
         localStorage.setItem(SESSION_KEY, sessionDate);
         renderSession();
-        renderList(document.getElementById('searchBox').value);
+        // The whole shop is the job now, so drop any one folder being worked
+        // through — otherwise the list stays narrowed to it.
+        clearCountFocus();
         showToast('New stock take started', 'success');
       }
     );
@@ -7325,7 +7457,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(!picked.length){ showToast('Tick at least one folder first', 'error'); return; }
     // De-duplicate: a barcode under two ticked paths only resets once
     const set = {};
-    picked.forEach(p => ncItemsUnder(p).forEach(bc => set[bc] = 1));
+    picked.forEach(p => itemsUnderFolder(p).forEach(bc => set[bc] = 1));
     const bcs = Object.keys(set);
     const names = picked.map(p => p === '' ? 'no folder' : p).join(', ');
     closeNewCountModal();
@@ -7336,11 +7468,28 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       () => {
         bcs.forEach(bc => items[bc].counted = 0);
         saveItems();
-        renderList(document.getElementById('searchBox').value);
+        // One folder reset means one folder to work through: show it on its own
+        // rather than leaving them to find it again in the whole shop.
+        if(picked.length === 1) setCountFocus(picked[0]);
+        else renderList(document.getElementById('searchBox').value);
         showToast('Counts reset — happy recounting', 'success');
       }
     );
   });
+
+  // The same folder, without wiping what has already been counted in it — for
+  // carrying on with one rather than starting it again.
+  document.getElementById('ncFocusBtn').addEventListener('click', () => {
+    const picked = Array.from(document.querySelectorAll('#ncFolderList input:checked'))
+                        .map(cb => cb.dataset.ncpath);
+    if(!picked.length){ showToast('Tick the folder you want to work through', 'error'); return; }
+    if(picked.length > 1){ showToast('Tick just one folder to work through', 'error'); return; }
+    closeNewCountModal();
+    setCountFocus(picked[0]);
+    showToast('Showing ' + focusLabel(picked[0]) + ' only', 'success');
+  });
+
+  document.getElementById('cfClear').addEventListener('click', clearCountFocus);
 
   // ---- Barcode generation ----
   // Codes read as KA-001 ... KA-999, then the letter moves on: KB-001, KC-001,
@@ -8702,10 +8851,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       items[barcode].counted = (items[barcode].counted || 0) + 1;
       saveItems();
       renderList(document.getElementById('searchBox').value);
+      // The count is always kept — a scan is a scan. But while working through
+      // one folder, say so when the thing scanned belongs somewhere else: the
+      // row will not appear in the narrowed list, and picking up the wrong tray
+      // is exactly the mistake this is meant to catch.
+      const astray = countFocus !== null && itemsUnderFolder(countFocus).indexOf(barcode) === -1
+        ? ` — not in ${focusLabel(countFocus)}` : '';
       if(fromScanner){
-        setScanFeedback(`✓ ${items[barcode].name} · ${items[barcode].counted}`, false);
+        setScanFeedback(`✓ ${items[barcode].name} · ${items[barcode].counted}${astray}`, !!astray);
       } else {
-        showToast(`${items[barcode].name} → now ${items[barcode].counted}`, 'success');
+        showToast(`${items[barcode].name} → now ${items[barcode].counted}${astray}`, astray ? 'error' : 'success');
       }
       return true;
     }
@@ -8714,7 +8869,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     stopScanner();
     document.getElementById('newItemBarcode').textContent = barcode;
     document.getElementById('newItemName').value = '';
-    document.getElementById('newItemFolder').value = '';
+    // Something unknown turning up mid-folder almost always belongs to that
+    // folder, so start it there — still typed over if it does not.
+    document.getElementById('newItemFolder').value = countFocus === null ? '' : countFocus;
     document.getElementById('newItemQty').value = '';
     document.getElementById('newItemMaker').value = '';
     document.getElementById('newItemPrice').value = '';
