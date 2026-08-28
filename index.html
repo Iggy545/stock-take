@@ -3834,9 +3834,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.21.0';
+  const APP_VERSION = '1.22.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '10:41';
+  const BUILD_TIME  = '11:47';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4894,11 +4894,27 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
 
   // ---- Product photos ----
-  // Phone photos are 3-5MB each; browser storage caps out around 5MB TOTAL.
-  // So every photo is resized to a small thumbnail and JPEG-compressed before
-  // it is stored — roughly 20-40KB each, so hundreds of items still fit.
-  const PHOTO_MAX_DIM = 400;
-  const PHOTO_QUALITY = 0.7;
+  // Phone photos are 3-5MB each, so every one is scaled down and JPEG'd before
+  // it is stored — roughly 80-160KB each.
+  //
+  // 400px/0.7 until 28 Aug 2026, and that was a localStorage number: photos
+  // used to live there, the whole store caps out around 5MB, and one phone
+  // photo would have swallowed the lot. They have been in IndexedDB for a
+  // while now — gigabytes, and stripped out of localStorage entirely — so that
+  // reason had gone; the number simply outlived it.
+  //
+  // 640 is not a guess either. It is what the website's own copies are, chosen
+  // in tools/photo-display.py because every photograph SumUp served was 640px,
+  // and it is a good size for the shop's grid and for looking at one closely.
+  // A photo taken here now sits beside those instead of looking soft next to
+  // them. The till's own thumbnails are 46px and its preview 220px, so this
+  // has always been about the website, never about this screen.
+  //
+  // Still small enough everywhere it has to fit: well inside Firestore's 1MB
+  // per document, which is what syncing an item costs. What it does grow is a
+  // backup file, since those carry the photographs.
+  const PHOTO_MAX_DIM = 640;
+  const PHOTO_QUALITY = 0.8;
 
   function fileToThumbnail(file){
     return new Promise((resolve, reject) => {

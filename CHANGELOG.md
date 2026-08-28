@@ -9,6 +9,27 @@ fixes.
 
 ---
 
+## v1.22.0 - 28 August 2026, 11:47
+
+### Changed
+- **Photos you take are now saved at a decent size for the website.** They used to be
+  shrunk to 400 pixels; they are now 640, which is exactly the size of the pictures
+  already on the website, so a photo you take sits beside those instead of looking soft
+  next to them.
+- The old limit was there because photos used to be kept in the browser's small storage,
+  where one phone photo would have filled the lot. They have not lived there for a long
+  time, and the number was simply left behind.
+- A phone photo of 3024x4032 comes out 480x640 and about 97KB; a wide one of 4000x2250
+  comes out 640x360 and about 27KB. Nothing else about taking a photo has changed.
+
+### Worth knowing
+- **Only photos taken from now on.** Nothing you have already is touched, re-saved or
+  re-processed.
+- Backups carry your photographs, so a lot of re-taken photos will make the backup file
+  bigger — roughly 10MB per hundred, against about 3MB before.
+
+---
+
 ## v1.21.0 - 28 August 2026, 10:41
 
 ### Added
