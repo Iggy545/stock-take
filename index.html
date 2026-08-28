@@ -769,6 +769,8 @@
       </div>
       <label>Item name</label>
       <input type="text" id="manualName" placeholder="e.g. Rose Quartz Bracelet">
+      <div class="folder-picks" id="addVariantPicks" style="display:none;"></div>
+      <div class="folder-hint" id="addVariantHint" style="margin-top:0;"></div>
       <label>Folder (optional)</label>
       <input type="text" id="manualFolder" list="folderOptions" placeholder="e.g. Bracelets or Bracelets/Beaded" autocomplete="off">
       <div class="folder-picks" id="addFolderPicks"></div>
@@ -1053,6 +1055,8 @@
     <div class="barcode-tag" id="newItemBarcode"></div>
     <label>Item name</label>
     <input type="text" id="newItemName" placeholder="e.g. Amethyst Cluster">
+    <div class="folder-picks" id="newVariantPicks" style="display:none;"></div>
+    <div class="folder-hint" id="newVariantHint" style="margin-top:0;"></div>
     <label>Folder (optional)</label>
     <input type="text" id="newItemFolder" list="folderOptions" placeholder="e.g. Bracelets" autocomplete="off">
     <div class="folder-picks" id="newFolderPicks"></div>
@@ -1271,6 +1275,8 @@
     <div class="barcode-tag" id="editItemBarcode"></div>
     <label>Item name</label>
     <input type="text" id="editItemName">
+    <div class="folder-picks" id="editVariantPicks" style="display:none;"></div>
+    <div class="folder-hint" id="editVariantHint" style="margin-top:0;"></div>
     <label>Folder</label>
     <input type="text" id="editItemFolder" list="folderOptions" placeholder="None — or e.g. Bracelets/Beaded" autocomplete="off">
     <div class="folder-picks" id="editFolderPicks"></div>
@@ -3834,9 +3840,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.22.0';
+  const APP_VERSION = '1.23.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '11:47';
+  const BUILD_TIME  = '15:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4695,6 +4701,79 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     bar.style.display = 'block';
   }
 
+  // ---- variant names ----
+  //
+  // Seven wind spinners, one per colour, are seven items in here - each with
+  // its own code, count and price, which is the only way the till can work.
+  // The WEBSITE draws them as one card with a dropdown, and the only thing
+  // that tells it to is the name: the part before an em dash is the card, the
+  // part after it is what the customer picks. Nothing is stored on the item.
+  // See shop-site/shop.js, which splits it exactly this way.
+  //
+  // An em dash has no key on a phone and Alt+0151 is not something anyone
+  // should have to remember, so these put one in by tapping.
+  //
+  // Nothing here EVER rewrites a name on its own. Two products that merely
+  // share a first word would silently collapse into one card, and a card that
+  // is wrong looks exactly like a card that is right - so the change is always
+  // offered and always made by a person.
+
+  const VARIANT_DASH = '—';
+
+  // The card and the choice, split the way the website splits them: FIRST em
+  // dash wins, both halves trimmed. No dash means an ordinary item.
+  function variantSplit(name){
+    const s = String(name == null ? '' : name);
+    const at = s.indexOf(VARIANT_DASH);
+    if(at < 0) return { group:'', label:'' };
+    return { group: s.slice(0, at).trim(), label: s.slice(at + VARIANT_DASH.length).trim() };
+  }
+
+  // The groups the shop already has, biggest first then alphabetical, so the
+  // one being added to today sits nearest the thumb. A group of one still
+  // counts: that lone item is exactly the one about to be joined.
+  function variantGroupsFrom(names){
+    const seen = {};
+    (names || []).forEach(n => {
+      const g = variantSplit(n).group;
+      if(!g) return;
+      const key = g.toLowerCase();
+      if(!seen[key]) seen[key] = { name: g, n: 0 };
+      seen[key].n++;
+    });
+    return Object.keys(seen).map(k => seen[k])
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  }
+
+  // Typed with an ordinary hyphen where an em dash was meant. Offered ONLY
+  // when the front of it is a group that already exists, so it turns up for
+  // the second wind spinner and never for "Chakra Key Chain - Eye", which is
+  // a name with a dash in it and not a variant of anything.
+  function variantDashFix(name, groups){
+    const s = String(name == null ? '' : name);
+    if(s.indexOf(VARIANT_DASH) > -1) return '';
+    const at = s.search(/ [-–] /);
+    if(at < 0) return '';
+    const group = s.slice(0, at).trim();
+    const known = (groups || []).some(g => String(g.name).toLowerCase() === group.toLowerCase());
+    if(!known) return '';
+    return group + ' ' + VARIANT_DASH + ' ' + s.slice(at + 3).trim();
+  }
+
+  // Put a name into a group without retyping it. What the name already says
+  // becomes the choice - except when that is the group's own name, or tapping
+  // "Wind Spinner" onto "Wind Spinner" would read "Wind Spinner - Wind
+  // Spinner". Tapping a different group swaps the group and keeps the colour,
+  // which is what a wrong tap needs to be able to do.
+  function variantJoin(name, group){
+    const cur = variantSplit(name);
+    const g = String(group == null ? '' : group).trim();
+    let label = cur.group ? cur.label : String(name == null ? '' : name).trim();
+    if(label.toLowerCase() === g.toLowerCase()) label = '';
+    return g + ' ' + VARIANT_DASH + ' ' + label;
+  }
+  // ---- end variant names ----
+
   // The three forms that can put an item in a folder — Edit item, the Add tab,
   // and the New item box that appears when an unknown code is scanned. All
   // three get the same picker, so a folder is chosen the same way wherever you
@@ -4825,11 +4904,98 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   });
 
+  // The same three forms once more, this time for the item's NAME. Tapping is
+  // the whole point: the dash cannot be typed on the devices this runs on.
+  const VARIANT_PICKERS = {
+    edit: { input:'editItemName', box:'editVariantPicks', hint:'editVariantHint' },
+    add:  { input:'manualName',   box:'addVariantPicks',  hint:'addVariantHint'  },
+    scan: { input:'newItemName',  box:'newVariantPicks',  hint:'newVariantHint'  }
+  };
+
+  function variantGroups(){
+    return variantGroupsFrom(Object.keys(items).map(bc => items[bc].name));
+  }
+
+  function renderVariantPicks(which){
+    const cfg = VARIANT_PICKERS[which];
+    if(!cfg) return;
+    const box = document.getElementById(cfg.box);
+    const hint = document.getElementById(cfg.hint);
+    const input = document.getElementById(cfg.input);
+    if(!box || !input) return;
+
+    const name = String(input.value || '');
+    const cur = variantSplit(name);
+    const groups = variantGroups();
+    const bits = [];
+
+    const fix = variantDashFix(name, groups);
+    if(fix){
+      bits.push('<div class="folder-pick on" data-name="' + escapeAttr(fix) + '">'
+              + 'Join ' + escapeHtml(variantSplit(fix).group) + ' – tap for the right dash</div>');
+    }
+
+    // Only the groups this name is already reaching for. The whole list would
+    // be dozens of buttons over a box nobody was struggling with.
+    const typed = (cur.group || name).trim().toLowerCase();
+    const near = !typed ? [] : groups.filter(g => {
+      const gl = g.name.toLowerCase();
+      return gl !== cur.group.trim().toLowerCase() && (gl.indexOf(typed) > -1 || typed.indexOf(gl) > -1);
+    }).slice(0, 6);
+
+    // The plus starts a NEW group. When one of the buttons below already says
+    // this exact name it does the very same thing, and two buttons for one job
+    // is a question rather than a shortcut - so it stands down.
+    const already = near.some(g => g.name.trim().toLowerCase() === name.trim().toLowerCase());
+    if(!cur.group && name.trim() && !already){
+      bits.push('<div class="folder-pick" data-name="' + escapeAttr(variantJoin(name, name)) + '">'
+              + '&#10133; Colour, size or scent</div>');
+    }
+
+    near.forEach(g => {
+      bits.push('<div class="folder-pick" data-name="' + escapeAttr(variantJoin(name, g.name)) + '">'
+              + escapeHtml(g.name) + ' <span style="opacity:.7;">' + g.n + '</span></div>');
+    });
+
+    box.innerHTML = bits.join('');
+    box.style.display = bits.length ? 'flex' : 'none';
+
+    if(hint){
+      if(cur.group && cur.label){
+        hint.textContent = 'Website: one card called “' + cur.group + '”, with “' + cur.label
+                         + '” as one of the choices on it. In here it stays its own item.';
+      } else if(cur.group){
+        hint.textContent = 'Now say what makes this one different — the colour, the size, the scent.';
+      } else {
+        hint.textContent = 'Same thing in more than one colour or size? Tap below and the website puts them on one card with a dropdown.';
+      }
+    }
+  }
+
+  Object.keys(VARIANT_PICKERS).forEach(which => {
+    const cfg = VARIANT_PICKERS[which];
+    const box = document.getElementById(cfg.box);
+    const input = document.getElementById(cfg.input);
+    if(!box || !input) return;
+    box.addEventListener('click', (e) => {
+      const pick = e.target.closest('.folder-pick');
+      if(!pick) return;
+      input.value = pick.getAttribute('data-name') || '';
+      renderVariantPicks(which);
+      // Straight back to typing with the cursor after the dash, which is where
+      // the colour goes.
+      input.focus();
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch(err){}
+    });
+    input.addEventListener('input', () => renderVariantPicks(which));
+  });
+
   // A form is opening: back to that maker's folders, and redraw from scratch.
   function resetFolderPicks(which){
     delete folderPicksShowAll[which];
     refreshFolderOptions();
     renderFolderPicks(which);
+    renderVariantPicks(which);
   }
 
   // Nest a list of barcodes into { items:[], sub:{name:node} } by folder path.

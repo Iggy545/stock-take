@@ -9,6 +9,43 @@ fixes.
 
 ---
 
+## v1.23.0 - 28 August 2026, 15:20
+
+### Added
+- **A way to say "this is the same thing in another colour".** Seven wind spinners in
+  seven colours are still seven items in here, each with its own code, count and price —
+  but the website can now show them as **one card with a dropdown** instead of seven
+  near-identical cards in a row.
+- The way you say so is the item's **name**: `Wind Spinner — Blue`, `Wind Spinner — Red`.
+  Everything before the long dash is the card; everything after it is what the customer
+  picks from the list.
+- **You do not have to type that dash.** Under Item name, on all three places an item can
+  be created or changed, there is now a row of buttons:
+  - **➕ Colour, size or scent** puts the dash in for you and leaves the cursor where the
+    colour goes.
+  - **Groups you already have** appear as buttons the moment you start typing a name that
+    matches one, so the second wind spinner is one tap.
+  - If you type an ordinary hyphen where the long dash was meant, and the front of it is
+    a group that already exists, it offers to swap it. Tapping is the only way it
+    changes — it never rewrites a name on its own.
+- The line under the box says what the website will do with the name as you type it, so
+  there is no publishing and checking to find out.
+
+### Worth knowing
+- **Nothing about the till changes.** Each colour keeps its own barcode, its own count
+  and its own price. Stock takes, sales, receipts, the export and supplier payouts all
+  see seven separate items exactly as before.
+- **Give each colour its own photograph.** Picking a colour on the website swaps the
+  picture, so a group where only one has a photo looks broken.
+- **Every colour still needs its website tick** — one that is not ticked simply will not
+  be offered in the list.
+- **Do not reuse the front of a name for something unrelated.** `Wind Spinner — Spare
+  Hook` would be offered to customers as if it were a colour.
+- If all but one of a group sells out and is deleted, the last one goes back to being an
+  ordinary card showing its full name.
+
+---
+
 ## v1.22.0 - 28 August 2026, 11:47
 
 ### Changed
