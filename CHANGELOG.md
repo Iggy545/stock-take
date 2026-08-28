@@ -9,7 +9,7 @@ fixes.
 
 ---
 
-## v1.20.0 - 28 August 2026, 12:40
+## v1.20.0 - 28 August 2026, 10:28
 
 ### Added
 - **You can now do a stock take one folder at a time.** Tap **New count**, tick one
@@ -43,7 +43,7 @@ fixes.
 
 ---
 
-## v1.19.0 - 28 August 2026, 11:05
+## v1.19.0 - 28 August 2026, 09:53
 
 ### Added
 - **Edit item now shows you the folders you already have.** Under the Folder box is a
