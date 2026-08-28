@@ -618,7 +618,7 @@
 <main>
   <div class="export-banner" id="exportBanner" style="display:none;">
     <span>📤 Weekly stock export is due</span>
-    <button id="exportBannerGo" type="button">Download CSV</button>
+    <button id="exportBannerGo" type="button">Export now</button>
     <button id="exportBannerClose" type="button" aria-label="Not now">✕</button>
   </div>
   <div class="tabs">
@@ -783,7 +783,7 @@
   <div id="tab-settings" style="display:none;">
     <div class="card">
       <div class="quick-sell-head">Your data</div>
-      <button class="btn btn-secondary" id="exportBtn" style="width:100%;">⤓ Export CSV</button>
+      <button class="btn btn-secondary" id="exportBtn" style="width:100%;">⤓ Export stock take</button>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn btn-secondary" id="backupBtn">💾 Save backup</button>
         <button class="btn btn-secondary" id="restoreBtn">📂 Restore backup</button>
@@ -3753,9 +3753,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.16.0';
+  const APP_VERSION = '1.17.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '03:04';
+  const BUILD_TIME  = '03:18';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -6527,9 +6527,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
 
   // Two cell formats are all this needs: bold for the header row (s="1") and
-  // money to two places (s="2").
+  // money (s="2"), which is a real number carrying the pound sign as its
+  // format - so the cell adds up and still reads as £12.50. Excel's own
+  // built-in formats are all dollars, hence the custom one.
   const XLSX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
     + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<numFmts count="1">'
+    + '<numFmt numFmtId="164" formatCode="&quot;£&quot;#,##0.00"/>'
+    + '</numFmts>'
     + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
     + '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
     + '<fills count="2"><fill><patternFill patternType="none"/></fill>'
@@ -6539,7 +6544,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     + '<cellXfs count="3">'
     + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
     + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
-    + '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
     + '</cellXfs>'
     + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
     + '</styleSheet>';
@@ -6678,6 +6683,33 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       ]);
     });
     rows.push(['TOTAL','','','','','','','','','', moneyCell(total),'','','']);
+    return { cols: cols, rows: rows };
+  }
+
+  // The stock take: what is on the shelf, what was counted, and what the
+  // difference is worth. sessionDate stands in for anything added before the
+  // count started.
+  function stockTable(){
+    const cols = [
+      { h:'Barcode' }, { h:'Name' }, { h:'Folder' }, { h:'Made By' }, { h:'Price Each' },
+      { h:'Expected Qty' }, { h:'Counted Qty' }, { h:'Difference' }, { h:'Counted Value' },
+      { h:'Date Added' }
+    ];
+    const rows = [];
+    let totalUnits = 0, totalValue = 0;
+    Object.keys(items).forEach(bc => {
+      const it = items[bc];
+      const counted = Number(it.counted) || 0;
+      const price = Number(it.price) || 0;
+      const lineValue = counted * price;
+      totalUnits += counted;
+      totalValue += lineValue;
+      rows.push([bc, it.name, itemFolder(it), it.maker || '', moneyCell(price),
+                 it.qty, counted, counted - it.qty, moneyCell(lineValue),
+                 fmtDate(it.addedAt || sessionDate)]);
+    });
+    // Totals row so the spreadsheet is useful without adding formulas by hand
+    rows.push(['TOTAL','','','','','', totalUnits, '', moneyCell(totalValue), '']);
     return { cols: cols, rows: rows };
   }
 
@@ -8805,44 +8837,31 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     m.addEventListener('click', (e) => { if(e.target === m) m.style.display = 'none'; });
   });
 
-  // ---- Export CSV ----
+  // ---- Export the stock take ----
   // One export routine shared by the button and the weekly reminder banner
   const EXPORT_STAMP_KEY  = 'stockTakeLastCsvExport';
   const EXPORT_SNOOZE_KEY = 'stockTakeCsvSnooze';
-  function exportStockCsv(){
-    const barcodes = Object.keys(items);
-    if(barcodes.length === 0){ showToast('No items to export', 'error'); return; }
-    let csv = 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added\n';
-    let totalUnits = 0, totalValue = 0;
-    barcodes.forEach(bc => {
-      const it = items[bc];
-      const counted = Number(it.counted) || 0;
-      const price = Number(it.price) || 0;
-      const diff = counted - it.qty;
-      const lineValue = counted * price;
-      totalUnits += counted;
-      totalValue += lineValue;
-      const row = [bc, it.name, itemFolder(it), it.maker||'', price.toFixed(2), it.qty, counted, diff,
-                   lineValue.toFixed(2), fmtDate(it.addedAt||sessionDate)];
-      csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
+  function exportStock(){
+    if(Object.keys(items).length === 0){ showToast('No items to export', 'error'); return; }
+    const t = stockTable();
+    const name = `stock-take-${new Date().toISOString().slice(0,10)}`;
+    askFormat('Export stock take', fmt => {
+      if(fmt === 'xlsx'){
+        downloadBlob(buildXlsx([{ name:'Stock take', cols: t.cols, rows: t.rows }]), name + '.xlsx');
+        showToast('Stock spreadsheet exported', 'success');
+      } else {
+        // BOM so Excel reads the file as UTF-8 (see report export)
+        downloadBlob(new Blob(['﻿' + tableToCsv(t.cols, t.rows)],
+          { type: 'text/csv;charset=utf-8;' }), name + '.csv');
+        showToast('CSV exported', 'success');
+      }
+      // only once something has actually been saved - cancelling must not
+      // reset the weekly reminder
+      try{ localStorage.setItem(EXPORT_STAMP_KEY, new Date().toISOString()); }catch(e){}
+      refreshExportBanner();
     });
-    // Totals row so the spreadsheet is useful without adding formulas by hand
-    csv += `"TOTAL","","","","","",${totalUnits},"","${totalValue.toFixed(2)}",""\n`;
-    // BOM so Excel reads the file as UTF-8 (see report export)
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `stock-take-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('CSV exported', 'success');
-    try{ localStorage.setItem(EXPORT_STAMP_KEY, new Date().toISOString()); }catch(e){}
-    refreshExportBanner();
   }
-  document.getElementById('exportBtn').addEventListener('click', exportStockCsv);
+  document.getElementById('exportBtn').addEventListener('click', exportStock);
 
   // Weekly reminder: shows once the last export is over 7 days old.
   // Dismissing snoozes it until tomorrow. First ever run starts the clock
@@ -8865,7 +8884,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }catch(e){}
     el.style.display = due ? 'flex' : 'none';
   }
-  document.getElementById('exportBannerGo').addEventListener('click', exportStockCsv);
+  document.getElementById('exportBannerGo').addEventListener('click', exportStock);
   document.getElementById('exportBannerClose').addEventListener('click', () => {
     try{ localStorage.setItem(EXPORT_SNOOZE_KEY, new Date(Date.now()+24*60*60*1000).toISOString()); }catch(e){}
     document.getElementById('exportBanner').style.display = 'none';

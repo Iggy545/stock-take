@@ -32,13 +32,17 @@ const ctx = {
   lineQty: s => (s.qty != null) ? (Number(s.qty) || 0) : 1,
   lineNet: s => (s.net != null) ? (Number(s.net) || 0) : (Number(s.price) || 0),
   fmtReceiptNo: n => '#SA-' + String(n).padStart(4, '0'),
+  // the stock take export leans on these three
+  itemFolder: it => String((it && it.folder) || ''),
+  fmtDate: iso => new Date(iso).toLocaleDateString(),
+  sessionDate: '2026-08-01T09:00:00.000Z',
 };
 vm.createContext(ctx);
 vm.runInContext(SRC + `
 this.moneyCell = moneyCell; this.tableToCsv = tableToCsv; this.salesTable = salesTable;
 this.buildXlsx = buildXlsx; this.xlsxSheetXml = xlsxSheetXml; this.xlsxSheetName = xlsxSheetName;
 this.xlsxColName = xlsxColName; this.zReportCsv = zReportCsv; this.zReportSheets = zReportSheets;
-this.zipStore = zipStore;
+this.zipStore = zipStore; this.stockTable = stockTable;
 `, ctx);
 
 let pass = 0, fail = 0;
@@ -65,6 +69,15 @@ const SALES = [
 // the second sale has no maker on the line, which is what an older record looks
 // like - it has to come off the item instead
 const ITEMS = { 'CA-031': { maker: 'Meg' } };
+
+// the shelf, for the stock take export
+const STOCK = {
+  'CA-001': { name: 'Rose Quartz "Heart"', folder: 'Kay/Jewellery', maker: 'Kay',
+              price: 12.5, qty: 2, counted: 1, addedAt: '2026-08-01T09:00:00.000Z' },
+  // no addedAt - it falls back to the date the count started
+  'CA-002': { name: 'Salt Lamp & Base', folder: 'Home', price: 24, qty: 1, counted: 1 },
+  '0012345': { name: 'Jasper Tumble', folder: '', maker: 'Jo', price: 4, qty: 4, counted: 4 },
+};
 
 function withSales(fn) {
   ctx.sales = SALES.slice();
@@ -110,6 +123,30 @@ console.log('\nThe sales report CSV');
   // the heading is written even for a quiet period, which is what it did before
   const empty = ctx.zReportCsv(f, 'x', { rows: [], ratePct: 1.69, webRatePct: 2.5 });
   check('a period with no makers still gets the payouts heading', empty.indexOf('\nSupplier payouts\n') !== -1);
+}
+
+console.log('\nThe stock take CSV');
+{
+  ctx.items = STOCK;
+  const t = ctx.stockTable();
+  const csv = ctx.tableToCsv(t.cols, t.rows);
+  // The old export left the item count in the total row unquoted while quoting
+  // every other cell in the file. Quoting it is the ONE deliberate difference -
+  // every CSV reader treats "6" and 6 alike - and this spells it out rather
+  // than letting the byte comparison quietly slide.
+  const want = oldStockCsv(STOCK).replace('"","",6,""', '"","","6",""');
+  check('byte for byte what the old export wrote, bar the quoted total', csv === want,
+        csv === want ? '' : '\n--- got ---\n' + csv + '--- want ---\n' + want);
+  const lines = csv.trim().split('\n');
+  check('the header row is not quoted',
+        lines[0] === 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added');
+  check('one row per item, plus a total', lines.length === Object.keys(STOCK).length + 2);
+  check('the price is money', lines[1].indexOf('"12.50"') !== -1);
+  check('a short count shows as a negative difference', lines[1].indexOf('"-1"') !== -1);
+  check('the counted value is the counted quantity, not the expected one',
+        lines[1].indexOf('"12.50"') !== -1 && lines[1].split(',')[8] === '"12.50"', lines[1]);
+  check('the total row counts the units and their value',
+        lines[4] === '"TOTAL","","","","","","6","","52.50",""', lines[4]);
 }
 
 /* ---------- 2. the .xlsx is really a .xlsx ---------- */
@@ -237,6 +274,37 @@ function readZip(buf) {
     check('the sheet is named in the workbook', part('xl/workbook.xml').indexOf('name="Sales"') !== -1);
     check('the styles the cells use are defined', part('xl/styles.xml').indexOf('<cellXfs count="3">') !== -1);
     check('the sheet holds the sales', part('xl/worksheets/sheet1.xml').indexOf('Rose Quartz') !== -1);
+
+    // Money should read as £12.50 in the sheet and still be a number underneath.
+    // Excel's built-in currency formats are all dollars, so this has to be a
+    // custom one, and a custom format that nothing refers to does nothing.
+    const styles = part('xl/styles.xml');
+    check('a pound sign currency format is defined',
+          /<numFmt numFmtId="164" formatCode="&quot;£&quot;#,##0\.00"\/>/.test(styles), styles.slice(0, 240));
+    check('the money style actually uses it',
+          /<xf numFmtId="164"[^>]*applyNumberFormat="1"/.test(styles));
+    check('the money style is the third one, which is what the cells ask for',
+          styles.indexOf('numFmtId="164"', styles.indexOf('<cellXfs')) > styles.indexOf('<cellXfs'));
+    check('the count of formats matches what is listed', styles.indexOf('<numFmts count="1">') !== -1);
+  }
+
+  console.log('\nThe stock take as a workbook');
+  {
+    ctx.items = STOCK;
+    const st = ctx.stockTable();
+    const sbuf = Buffer.from(await ctx.buildXlsx([{ name: 'Stock take', cols: st.cols, rows: st.rows }]).arrayBuffer());
+    let sentries = [];
+    try { sentries = readZip(sbuf); } catch (e) { check('the stock archive reads back', false, e.message); }
+    const spart = n => (sentries.filter(e => e.name === n)[0] || { data: Buffer.alloc(0) }).data.toString('utf8');
+    const sheet = spart('xl/worksheets/sheet1.xml');
+    check('every CRC matches the bytes stored', sentries.every(e => zlib.crc32(e.data) === e.crc));
+    check('the price is a number in the money style', sheet.indexOf('<c r="E2" s="2"><v>12.50</v></c>') !== -1);
+    check('the counted value is too', sheet.indexOf('<c r="I2" s="2"><v>12.50</v></c>') !== -1);
+    // Quantities are counts, not money - a £ in front of them would be wrong.
+    check('a quantity is left as a plain number', sheet.indexOf('<c r="F2"><v>2</v></c>') !== -1);
+    check('a short count keeps its minus sign', sheet.indexOf('<c r="H2"><v>-1</v></c>') !== -1);
+    check('a barcode keeps its leading zero', sheet.indexOf('>0012345</t>') !== -1);
+    check('the sheet is named for what it is', spart('xl/workbook.xml').indexOf('name="Stock take"') !== -1);
   }
 
   console.log('\nThe report as a workbook');
@@ -315,6 +383,26 @@ function oldSalesCsv(sales, items) {
     csv += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',') + '\n';
   });
   csv += `"TOTAL","","","","","","","","","","${total.toFixed(2)}","","",""\n`;
+  return csv;
+}
+
+function oldStockCsv(items) {
+  const itemFolder = ctx.itemFolder, fmtDate = ctx.fmtDate, sessionDate = ctx.sessionDate;
+  let csv = 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added\n';
+  let totalUnits = 0, totalValue = 0;
+  Object.keys(items).forEach(bc => {
+    const it = items[bc];
+    const counted = Number(it.counted) || 0;
+    const price = Number(it.price) || 0;
+    const diff = counted - it.qty;
+    const lineValue = counted * price;
+    totalUnits += counted;
+    totalValue += lineValue;
+    const row = [bc, it.name, itemFolder(it), it.maker || '', price.toFixed(2), it.qty, counted, diff,
+      lineValue.toFixed(2), fmtDate(it.addedAt || sessionDate)];
+    csv += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',') + '\n';
+  });
+  csv += `"TOTAL","","","","","",${totalUnits},"","${totalValue.toFixed(2)}",""\n`;
   return csv;
 }
 

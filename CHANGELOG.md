@@ -9,6 +9,32 @@ fixes.
 
 ---
 
+## v1.17.0 - 28 August 2026, 03:18
+
+### Added
+- **The stock export asks CSV or Excel too.** Settings → Your data → **Export stock take**
+  (it used to say Export CSV), and the weekly reminder banner's button with it.
+
+### Changed
+- **Money in the Excel files is now formatted as pounds** - £12.50 rather than 12.50.
+  Every money column gets it: prices, discounts, takings, counted values, supplier
+  payouts and fees. Quantities and item counts are left alone, because a £ in front of
+  them would be wrong.
+- The cells are still **real numbers**, so they add up exactly as before. The pound sign
+  is the cell's format, not text typed into it.
+
+### Worth knowing
+- **The CSV files still hold plain numbers** - 12.50, not £12.50. A CSV is plain text and
+  has no number formats to set; a pound sign in it would be a character sitting in the
+  data, which stops other systems reading the column as a number. Open the Excel version
+  for pounds, or format the column in Excel after opening the CSV.
+- One small difference in the stock CSV: the item count in the TOTAL row is now quoted
+  like every other cell in the file. Nothing that reads CSV can tell the difference.
+- The weekly export reminder now only resets when a file is actually saved. Opening the
+  chooser and cancelling leaves the reminder where it was.
+
+---
+
 ## v1.16.0 - 28 August 2026, 03:04
 
 ### Added
