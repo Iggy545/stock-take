@@ -73,8 +73,10 @@ const ITEMS = { 'CA-031': { maker: 'Meg' } };
 // the shelf, for the stock take export
 const STOCK = {
   'CA-001': { name: 'Rose Quartz "Heart"', folder: 'Kay/Jewellery', maker: 'Kay',
-              price: 12.5, qty: 2, counted: 1, addedAt: '2026-08-01T09:00:00.000Z' },
-  // no addedAt - it falls back to the date the count started
+              price: 12.5, qty: 2, counted: 1, label: 'Small swing tag',
+              addedAt: '2026-08-01T09:00:00.000Z' },
+  // no addedAt - it falls back to the date the count started. No label either,
+  // which is the normal case: most items will never have one.
   'CA-002': { name: 'Salt Lamp & Base', folder: 'Home', price: 24, qty: 1, counted: 1 },
   '0012345': { name: 'Jasper Tumble', folder: '', maker: 'Jo', price: 4, qty: 4, counted: 4 },
 };
@@ -139,14 +141,22 @@ console.log('\nThe stock take CSV');
         csv === want ? '' : '\n--- got ---\n' + csv + '--- want ---\n' + want);
   const lines = csv.trim().split('\n');
   check('the header row is not quoted',
-        lines[0] === 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added');
+        lines[0] === 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added,Label');
   check('one row per item, plus a total', lines.length === Object.keys(STOCK).length + 2);
   check('the price is money', lines[1].indexOf('"12.50"') !== -1);
   check('a short count shows as a negative difference', lines[1].indexOf('"-1"') !== -1);
   check('the counted value is the counted quantity, not the expected one',
         lines[1].indexOf('"12.50"') !== -1 && lines[1].split(',')[8] === '"12.50"', lines[1]);
   check('the total row counts the units and their value',
-        lines[4] === '"TOTAL","","","","","","6","","52.50",""', lines[4]);
+        lines[4] === '"TOTAL","","","","","","6","","52.50","",""', lines[4]);
+
+  // The label the shop needs to print. It rides in the export and nowhere else:
+  // shop-worker never asks Firestore for it, which test/sets.test.js over there
+  // pins, and SHARED.md says why.
+  check('the label the shop typed comes out in its own column',
+        lines[1].split(',').pop() === '"Small swing tag"', lines[1]);
+  check('an item with no label gets an empty cell, not the word undefined',
+        lines[2].split(',').pop() === '""', lines[2]);
 }
 
 /* ---------- 2. the .xlsx is really a .xlsx ---------- */
@@ -305,6 +315,11 @@ function readZip(buf) {
     check('a short count keeps its minus sign', sheet.indexOf('<c r="H2"><v>-1</v></c>') !== -1);
     check('a barcode keeps its leading zero', sheet.indexOf('>0012345</t>') !== -1);
     check('the sheet is named for what it is', spart('xl/workbook.xml').indexOf('name="Stock take"') !== -1);
+    // Column K, on the end, so nothing that was already there has moved.
+    check('the label is the last column and reads as text',
+          sheet.indexOf('<c r="K1" s="1" t="inlineStr"><is><t xml:space="preserve">Label</t></is></c>') !== -1 &&
+          sheet.indexOf('<c r="K2" t="inlineStr"><is><t xml:space="preserve">Small swing tag</t></is></c>') !== -1);
+    check('an item with no label leaves the cell out altogether', sheet.indexOf('<c r="K3"') === -1);
   }
 
   console.log('\nThe report as a workbook');
@@ -386,9 +401,12 @@ function oldSalesCsv(sales, items) {
   return csv;
 }
 
+// v1.18.0 added the Label column to this file DELIBERATELY - it is the one
+// change to the stock CSV since this reference was taken, written in here
+// rather than papered over by loosening the comparison.
 function oldStockCsv(items) {
   const itemFolder = ctx.itemFolder, fmtDate = ctx.fmtDate, sessionDate = ctx.sessionDate;
-  let csv = 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added\n';
+  let csv = 'Barcode,Name,Folder,Made By,Price Each,Expected Qty,Counted Qty,Difference,Counted Value,Date Added,Label\n';
   let totalUnits = 0, totalValue = 0;
   Object.keys(items).forEach(bc => {
     const it = items[bc];
@@ -399,10 +417,10 @@ function oldStockCsv(items) {
     totalUnits += counted;
     totalValue += lineValue;
     const row = [bc, it.name, itemFolder(it), it.maker || '', price.toFixed(2), it.qty, counted, diff,
-      lineValue.toFixed(2), fmtDate(it.addedAt || sessionDate)];
+      lineValue.toFixed(2), fmtDate(it.addedAt || sessionDate), it.label || ''];
     csv += row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',') + '\n';
   });
-  csv += `"TOTAL","","","","","",${totalUnits},"","${totalValue.toFixed(2)}",""\n`;
+  csv += `"TOTAL","","","","","",${totalUnits},"","${totalValue.toFixed(2)}","",""\n`;
   return csv;
 }
 

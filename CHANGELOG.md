@@ -9,6 +9,30 @@ fixes.
 
 ---
 
+## v1.18.0 - 28 August 2026, 03:32
+
+### Added
+- **Every item can now carry the label it needs.** A new **Label needed** box on each
+  item, under Price each — free text, whatever wording suits you: "Small swing tag",
+  "Large barcode label", "No label, engraved". It is on all three places an item can be
+  created or changed: the Add tab, the New item box that appears when you scan something
+  unknown, and Edit item.
+- **It comes out in the stock export as a new Label column**, in both CSV and Excel, on
+  the end so every column that was already there is where it was.
+- The box offers back the wordings you have used before, the same way the Folder box
+  does, so the same label does not end up written three different ways.
+
+### Worth knowing
+- **This is never sent to the website.** Not in any form: the website's data is built by
+  naming the fields it may have, one by one, and this is not one of them. There is now a
+  test in the website's own code that fails if anyone ever adds it.
+- It **does** travel between your own devices with team sync, and it is kept in backups
+  and carried through an item import — it is your record, it just never leaves the shop.
+- An item with no label has no label. The box left empty means nothing is stored, and the
+  column comes out blank rather than saying anything.
+
+---
+
 ## v1.17.0 - 28 August 2026, 03:18
 
 ### Added

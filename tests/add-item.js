@@ -88,12 +88,28 @@ console.log('\nThe rest of the record');
   check('photo is carried', it.photo === base.photo);
   check('addedAt is set', typeof it.addedAt === 'string' && it.addedAt.length > 10);
 }
+
+console.log('\nThe label the shop needs to print');
+{
+  const it = newItemRecord({ ...base, label: ' Small swing tag ' });
+  check('the label is carried and trimmed', it.label === 'Small swing tag', 'label=' + it.label);
+  // Absent, not empty: this is a note the shop may never write, and an empty
+  // string would show up as a real value in the stock export.
+  check('no label means no field at all', !('label' in newItemRecord(base)));
+  check('a blank label is not stored', !('label' in newItemRecord({ ...base, label: '   ' })));
+  // It is shop business. The website publishes by naming fields, so this could
+  // only ever leak by someone adding it to that list - see SHARED.md and
+  // shop-worker/test/sets.test.js.
+  check('the label is nothing to do with the website fields',
+    newItemRecord({ ...base, web: true, label: 'Small swing tag' }).webDesc === undefined);
+}
+
 {
   // The record must not sprout fields nobody asked for - the website publishes
   // by naming fields, but the till's own reports do not, so a stray key here
   // travels further than you would think.
   const it = newItemRecord({ ...base, web: true, webDesc: 'x', nonsense: 'should not appear' });
-  const expected = ['name', 'qty', 'maker', 'price', 'folder', 'photo', 'counted', 'addedAt', 'web', 'webDesc'];
+  const expected = ['name', 'qty', 'maker', 'price', 'folder', 'photo', 'counted', 'addedAt', 'web', 'webDesc', 'label'];
   check('no unexpected fields', Object.keys(it).every(k => expected.includes(k)),
     Object.keys(it).filter(k => !expected.includes(k)).join(', '));
 }

@@ -84,6 +84,22 @@ console.log('\nWebsite fields travel');
   check('a shop-only item gets no webQty', c.webQty === undefined);
 }
 
+console.log('\nThe label the shop needs to print');
+{
+  // A backup used as an import file carries these, and an item arriving without
+  // the note it had is a small thing that is annoying to put back by hand.
+  const plan = planItemImport({
+    'CA-020': { name: 'Tagged thing', price: 10, counted: 1, label: '  Small swing tag  ' },
+    'CA-021': { name: 'Untagged thing', price: 10, counted: 1 },
+    'CA-022': { name: 'Blank tag', price: 10, counted: 1, label: '   ' },
+    'CA-023': { name: 'Nonsense tag', price: 10, counted: 1, label: { not: 'a string' } }
+  }, {});
+  check('a label is carried in and trimmed', plan.add['CA-020'].label === 'Small swing tag');
+  check('no label stays no label', !('label' in plan.add['CA-021']));
+  check('a blank label is not stored', !('label' in plan.add['CA-022']));
+  check('a label that is not text is refused', !('label' in plan.add['CA-023']));
+}
+
 console.log('\nPhotos: only data:image and https survive');
 {
   check('https kept', safeImportPhoto('https://images.sumup.com/img_x/image.png') !== '');

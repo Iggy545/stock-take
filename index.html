@@ -718,6 +718,9 @@
       <input type="text" id="manualMaker" placeholder="e.g. Kay">
       <label>Price each (£)</label>
       <input type="number" id="manualPrice" placeholder="0.00" inputmode="decimal" step="0.01" min="0">
+      <label>Label needed (optional)</label>
+      <input type="text" id="manualLabel" list="labelOptions" placeholder="e.g. Small swing tag" autocomplete="off">
+      <div class="folder-hint">Just for you — which label this one needs when you come to print. It is never sent to the website; it comes out in the stock export.</div>
       <label>Photo (optional)</label>
       <button class="btn-generate photo-btn" type="button" onclick="document.getElementById('manualPhotoInput').click()">📷 Add photo</button>
       <input type="file" id="manualPhotoInput" accept="image/*" style="display:none;">
@@ -878,6 +881,8 @@
 
 <!-- Shared list of existing folders for the folder pickers -->
 <datalist id="folderOptions"></datalist>
+<!-- Every label wording already used, so the same one is typed the same way twice. -->
+<datalist id="labelOptions"></datalist>
 
 <div id="toast" class="toast"></div>
 
@@ -994,6 +999,8 @@
     <input type="text" id="newItemMaker" placeholder="e.g. Kay">
     <label>Price each (£)</label>
     <input type="number" id="newItemPrice" placeholder="0.00" inputmode="decimal" step="0.01" min="0">
+    <label>Label needed (optional)</label>
+    <input type="text" id="newItemLabel" list="labelOptions" placeholder="e.g. Small swing tag" autocomplete="off">
     <label>Photo (optional)</label>
     <button class="btn-generate photo-btn" type="button" onclick="document.getElementById('newPhotoInput').click()">📷 Add photo</button>
     <input type="file" id="newPhotoInput" accept="image/*" style="display:none;">
@@ -1203,6 +1210,9 @@
     <input type="text" id="editItemMaker">
     <label>Price each (£)</label>
     <input type="number" id="editItemPrice" inputmode="decimal" step="0.01" min="0">
+    <label>Label needed (optional)</label>
+    <input type="text" id="editItemLabel" list="labelOptions" placeholder="e.g. Small swing tag" autocomplete="off">
+    <div class="folder-hint">Never sent to the website — it comes out in the stock export.</div>
     <label>Photo (optional)</label>
     <button class="btn-generate photo-btn" type="button" onclick="document.getElementById('editPhotoInput').click()">📷 Add photo</button>
     <input type="file" id="editPhotoInput" accept="image/*" style="display:none;">
@@ -3753,9 +3763,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.17.0';
+  const APP_VERSION = '1.18.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '03:18';
+  const BUILD_TIME  = '03:32';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4501,6 +4511,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function refreshFolderOptions(){
     const dl = document.getElementById('folderOptions');
     if(dl) dl.innerHTML = allFolderPaths().map(p => `<option value="${escapeAttr(p)}"></option>`).join('');
+    // The same trick for label wordings: offering back what has been typed
+    // before is what stops "small tag" and "Small Tag" both existing.
+    const ld = document.getElementById('labelOptions');
+    if(ld) ld.innerHTML = allLabelsUsed().map(p => `<option value="${escapeAttr(p)}"></option>`).join('');
+  }
+
+  function allLabelsUsed(){
+    const set = {};
+    Object.keys(items).forEach(bc => {
+      const v = String((items[bc] && items[bc].label) || '').trim();
+      if(v) set[v] = 1;
+    });
+    return Object.keys(set).sort((a,b) => a.localeCompare(b));
   }
 
   // Nest a list of barcodes into { items:[], sub:{name:node} } by folder path.
@@ -6690,10 +6713,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // difference is worth. sessionDate stands in for anything added before the
   // count started.
   function stockTable(){
+    // Label goes on the end so every column that was already here keeps the
+    // position anything downstream expects.
     const cols = [
       { h:'Barcode' }, { h:'Name' }, { h:'Folder' }, { h:'Made By' }, { h:'Price Each' },
       { h:'Expected Qty' }, { h:'Counted Qty' }, { h:'Difference' }, { h:'Counted Value' },
-      { h:'Date Added' }
+      { h:'Date Added' }, { h:'Label' }
     ];
     const rows = [];
     let totalUnits = 0, totalValue = 0;
@@ -6706,10 +6731,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       totalValue += lineValue;
       rows.push([bc, it.name, itemFolder(it), it.maker || '', moneyCell(price),
                  it.qty, counted, counted - it.qty, moneyCell(lineValue),
-                 fmtDate(it.addedAt || sessionDate)]);
+                 fmtDate(it.addedAt || sessionDate), it.label || '']);
     });
     // Totals row so the spreadsheet is useful without adding formulas by hand
-    rows.push(['TOTAL','','','','','', totalUnits, '', moneyCell(totalValue), '']);
+    rows.push(['TOTAL','','','','','', totalUnits, '', moneyCell(totalValue), '', '']);
     return { cols: cols, rows: rows };
   }
 
@@ -8053,6 +8078,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       counted: qty,
       addedAt: new Date().toISOString()
     };
+    // Which label this one needs at printing time. Shop business: it goes in
+    // the stock export and nowhere near the website. Blank means no note, not
+    // an empty note, so it is left off the record entirely.
+    const label = String(f.label || '').trim();
+    if(label) it.label = label;
     if(f.web){
       it.web = 1;
       const d = String(f.webDesc || '').trim();
@@ -8080,12 +8110,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     items[bc] = newItemRecord({
       name, qty, maker, price, folder,
       photo: manualPhoto.value,
+      label: document.getElementById('manualLabel').value,
       web: document.getElementById('manualWebOn').checked,
       webDesc: document.getElementById('manualWebDesc').value
     });
     if(!saveItems()) return;
     manualPhoto.clear();
-    ['manualBarcode','manualName','manualQty','manualMaker','manualPrice','manualFolder','manualWebDesc'].forEach(id => document.getElementById(id).value='');
+    ['manualBarcode','manualName','manualQty','manualMaker','manualPrice','manualFolder','manualLabel','manualWebDesc'].forEach(id => document.getElementById(id).value='');
     // Back to ticked, which is the default for a reason - see the form.
     document.getElementById('manualWebOn').checked = true;
     document.getElementById('manualWebMore').style.display = '';
@@ -8617,6 +8648,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('newItemQty').value = '';
     document.getElementById('newItemMaker').value = '';
     document.getElementById('newItemPrice').value = '';
+    document.getElementById('newItemLabel').value = '';
     newPhoto.clear();
     document.getElementById('newItemModal').style.display = 'flex';
     document.getElementById('newItemModal').dataset.barcode = barcode;
@@ -8636,7 +8668,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const price = parseFloat(document.getElementById('newItemPrice').value) || 0;
     const folder = normFolder(document.getElementById('newItemFolder').value);
     if(!name){ showToast('Item name is required', 'error'); return; }
+    const label = document.getElementById('newItemLabel').value.trim();
     items[bc] = { name, qty, maker, price, folder, photo: newPhoto.value, counted: 1, addedAt: new Date().toISOString() };
+    if(label) items[bc].label = label;
     saveItems();
     document.getElementById('newItemModal').style.display = 'none';
     renderList(document.getElementById('searchBox').value);
@@ -8702,6 +8736,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('editItemQty').value = it.qty;
     document.getElementById('editItemMaker').value = it.maker || '';
     document.getElementById('editItemPrice').value = (it.price !== undefined && it.price !== null) ? it.price : '';
+    document.getElementById('editItemLabel').value = it.label || '';
     editPhoto.set(it.photo || '');
     // If this item's photo hasn't come back from IndexedDB yet, fetch it now, so
     // the form never opens showing an empty photo box for an item that has one.
@@ -8788,6 +8823,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     it.qty = parseInt(document.getElementById('editItemQty').value,10) || 0;
     it.maker = document.getElementById('editItemMaker').value.trim();
     it.price = parseFloat(document.getElementById('editItemPrice').value) || 0;
+    // Shop business only - this one is never published. Cleared means gone from
+    // the record rather than stored empty.
+    const labelWanted = document.getElementById('editItemLabel').value.trim();
+    if(labelWanted) it.label = labelWanted; else delete it.label;
     // Pressing Remove photo is the one thing that is allowed to destroy a
     // stored photo, so say so explicitly on the record. Without this marker
     // reconcilePhotos() cannot tell a removal from a photo that simply has not
@@ -8958,6 +8997,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(raw.webPrice !== undefined && raw.webPrice !== null && isFinite(Number(raw.webPrice))){
         it.webPrice = Number(raw.webPrice);
       }
+      if(typeof raw.label === 'string' && raw.label.trim()) it.label = raw.label.trim();
       if(typeof raw.webDesc === 'string' && raw.webDesc.trim()) it.webDesc = raw.webDesc;
       // Carry a set rule in; dangling ones are ignored by setMembers() until
       // the partner arrives too.
