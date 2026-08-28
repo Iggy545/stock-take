@@ -127,6 +127,10 @@
   .folder-pick.on{
     background:var(--moss);border-color:var(--moss);color:#fff;
   }
+  /* The way out of one person's folders and back to the whole shop's */
+  .folder-pick.more{
+    background:transparent;border-style:dashed;color:var(--muted);font-weight:600;
+  }
 
   /* Promo codes */
   .promo-row{
@@ -767,6 +771,8 @@
       <input type="text" id="manualName" placeholder="e.g. Rose Quartz Bracelet">
       <label>Folder (optional)</label>
       <input type="text" id="manualFolder" list="folderOptions" placeholder="e.g. Bracelets or Bracelets/Beaded" autocomplete="off">
+      <div class="folder-picks" id="addFolderPicks"></div>
+      <div class="folder-hint" id="addFolderPicksHint" style="margin-top:0;"></div>
       <div class="folder-hint">Groups this item with others — e.g. all bracelets in <b>Bracelets</b>. Use / to make a subfolder inside a folder.</div>
       <label>Starting quantity</label>
       <input type="number" id="manualQty" placeholder="0" inputmode="numeric">
@@ -1049,6 +1055,8 @@
     <input type="text" id="newItemName" placeholder="e.g. Amethyst Cluster">
     <label>Folder (optional)</label>
     <input type="text" id="newItemFolder" list="folderOptions" placeholder="e.g. Bracelets" autocomplete="off">
+    <div class="folder-picks" id="newFolderPicks"></div>
+    <div class="folder-hint" id="newFolderPicksHint" style="margin-top:0;"></div>
     <label>Starting quantity</label>
     <input type="number" id="newItemQty" placeholder="0" inputmode="numeric">
     <label>Made by</label>
@@ -3826,9 +3834,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.20.0';
+  const APP_VERSION = '1.21.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '10:28';
+  const BUILD_TIME  = '10:41';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4687,24 +4695,80 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     bar.style.display = 'block';
   }
 
+  // The three forms that can put an item in a folder — Edit item, the Add tab,
+  // and the New item box that appears when an unknown code is scanned. All
+  // three get the same picker, so a folder is chosen the same way wherever you
+  // are, and the wording only has to be got right once.
+  const FOLDER_PICKERS = {
+    edit: { input:'editItemFolder', box:'editFolderPicks', hint:'editFolderPicksHint', maker:'editItemMaker' },
+    add:  { input:'manualFolder',   box:'addFolderPicks',  hint:'addFolderPicksHint',  maker:'manualMaker'   },
+    scan: { input:'newItemFolder',  box:'newFolderPicks',  hint:'newFolderPicksHint',  maker:'newItemMaker'  }
+  };
+
+  // Which pickers have been asked for the whole list rather than one maker's.
+  // Cleared when a form opens, so the next item starts from the maker again.
+  const folderPicksShowAll = {};
+
+  // The folders a given person's items are already in, parent folders included.
+  // null means "do not narrow": either nobody is named, or that name has no
+  // folders yet — a maker being new is no reason to hide the shop from them.
+  function foldersForMaker(name){
+    const want = String(name || '').trim().toLowerCase();
+    if(!want) return null;
+    const set = {};
+    Object.keys(items).forEach(bc => {
+      const it = items[bc];
+      if(String(it.maker || '').trim().toLowerCase() !== want) return;
+      const path = itemFolder(it);
+      if(!path) return;
+      const parts = path.split('/');
+      for(let i=1;i<=parts.length;i++) set[parts.slice(0,i).join('/')] = 1;
+    });
+    const out = Object.keys(set).sort((a,b) => a.localeCompare(b));
+    return out.length ? out : null;
+  }
+
   // The folders already in use, drawn as buttons under a folder box, so a folder
   // can be picked by tapping rather than remembering and typing it exactly.
   // Typing still works — the box and these stay in step with each other.
-  function renderFolderPicks(narrowToTyping){
-    const box = document.getElementById('editFolderPicks');
-    const hint = document.getElementById('editFolderPicksHint');
-    const input = document.getElementById('editItemFolder');
+  function renderFolderPicks(which, narrowToTyping){
+    const cfg = FOLDER_PICKERS[which];
+    if(!cfg) return;
+    const box = document.getElementById(cfg.box);
+    const hint = document.getElementById(cfg.hint);
+    const input = document.getElementById(cfg.input);
     if(!box || !input) return;
-    const paths = allFolderPaths();
-    if(!paths.length){
+
+    const all = allFolderPaths();
+    if(!all.length){
       box.innerHTML = '';
       box.style.display = 'none';
       if(hint) hint.textContent = 'No folders yet — type one here to make the first, e.g. Bracelets.';
       return;
     }
     box.style.display = 'flex';
-    if(hint) hint.textContent = 'Tap a folder you already use, or type a new one. Use / to make a subfolder.';
     const current = normFolder(input.value);
+
+    // With a maker named, offer that person's folders first. In a shop where
+    // the folders are largely one per person this is the whole list they want
+    // and the rest is noise — but it is only ever a first offer: the full list
+    // is one tap away, typing overrides it, and the folder this item is
+    // already in is never hidden by it.
+    const makerEl = cfg.maker ? document.getElementById(cfg.maker) : null;
+    const maker = makerEl ? String(makerEl.value || '').trim() : '';
+    const mine = folderPicksShowAll[which] ? null : foldersForMaker(maker);
+
+    let paths = all;
+    if(mine){
+      paths = mine.slice();
+      // Keep the folder this item is actually in on the list even when it is
+      // somebody else's — but only if it exists. A half-typed new name is not
+      // a folder yet, and offering it back as one reading "0" is nonsense.
+      if(current && paths.indexOf(current) === -1 && all.indexOf(current) !== -1){
+        paths.push(current);
+        paths.sort((a,b) => a.localeCompare(b));
+      }
+    }
 
     // While they are typing, only offer the folders that match, so a shop with
     // dozens of them narrows down instead of scrolling. The one the item is in
@@ -4723,7 +4787,49 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     html += shown.map(p =>
       `<div class="folder-pick ${p === current ? 'on' : ''}" data-folder="${escapeAttr(p)}">📁 ${escapeHtml(p)} <span style="opacity:.7;">${folderItemCount(p)}</span></div>`
     ).join('');
+    if(mine) html += `<div class="folder-pick more" data-showall="1">Show all ${all.length} folders</div>`;
     box.innerHTML = html;
+
+    if(hint){
+      hint.textContent = mine
+        ? `Folders ${maker} already uses. Tap one, type a new one, or show them all.`
+        : 'Tap a folder you already use, or type a new one. Use / to make a subfolder.';
+    }
+  }
+
+  // One set of wiring for all three forms: tapping a button fills the box,
+  // typing keeps the buttons in step, and changing who made it re-offers that
+  // person's folders — including when the answer had been widened to all of
+  // them, because a different name deserves a fresh first offer.
+  Object.keys(FOLDER_PICKERS).forEach(which => {
+    const cfg = FOLDER_PICKERS[which];
+    const box = document.getElementById(cfg.box);
+    const input = document.getElementById(cfg.input);
+    const makerEl = cfg.maker ? document.getElementById(cfg.maker) : null;
+    if(!box || !input) return;
+    box.addEventListener('click', (e) => {
+      const pick = e.target.closest('.folder-pick');
+      if(!pick) return;
+      if(pick.dataset.showall){
+        folderPicksShowAll[which] = 1;
+        renderFolderPicks(which);
+        return;
+      }
+      input.value = pick.getAttribute('data-folder') || '';
+      renderFolderPicks(which);
+    });
+    input.addEventListener('input', () => renderFolderPicks(which, true));
+    if(makerEl) makerEl.addEventListener('input', () => {
+      delete folderPicksShowAll[which];
+      renderFolderPicks(which);
+    });
+  });
+
+  // A form is opening: back to that maker's folders, and redraw from scratch.
+  function resetFolderPicks(which){
+    delete folderPicksShowAll[which];
+    refreshFolderOptions();
+    renderFolderPicks(which);
   }
 
   // Nest a list of barcodes into { items:[], sub:{name:node} } by folder path.
@@ -7371,6 +7477,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       document.getElementById('tab-till').style.display = target==='till' ? 'block':'none';
       document.getElementById('tab-sold').style.display = target==='sold' ? 'block':'none';
       document.getElementById('tab-add').style.display  = target==='add'  ? 'block':'none';
+      if(target === 'add') resetFolderPicks('add');
       document.getElementById('tab-settings').style.display = target==='settings' ? 'block':'none';
 
       // The scan button does different things depending on where you are,
@@ -7704,6 +7811,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('manualMaker').value = m.name;
     const folderEl = document.getElementById('manualFolder');
     if(!folderEl.value.trim()) folderEl.value = m.name + '/';
+    // Both boxes were filled in by script, so nothing fired: redraw by hand.
+    resetFolderPicks('add');
     document.getElementById('manualBarcodePreview').style.display = 'block';
     const ok = renderBarcodeSvg('manualBarcodeSvg', code);
     if(!ok) document.getElementById('manualBarcodePreview').style.display = 'none';
@@ -8340,6 +8449,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('manualWebOn').checked = true;
     document.getElementById('manualWebMore').style.display = '';
     manualCodeLetter = '';
+    resetFolderPicks('add');
     document.getElementById('manualBarcodePreview').style.display = 'none';
     renderMakerUi();   // the counts and next-code lines have moved on
     document.querySelector('.tab[data-tab="list"]').click();
@@ -8876,6 +8986,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('newItemMaker').value = '';
     document.getElementById('newItemPrice').value = '';
     document.getElementById('newItemLabel').value = '';
+    resetFolderPicks('scan');
     newPhoto.clear();
     document.getElementById('newItemModal').style.display = 'flex';
     document.getElementById('newItemModal').dataset.barcode = barcode;
@@ -8950,16 +9061,6 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     sumEl.textContent = msg;
   }
 
-  // Tapping one of the folder buttons fills the box; typing keeps the buttons
-  // in step, so whichever way it is done the picked folder is the lit one.
-  document.getElementById('editFolderPicks').addEventListener('click', (e) => {
-    const pick = e.target.closest('.folder-pick');
-    if(!pick) return;
-    document.getElementById('editItemFolder').value = pick.getAttribute('data-folder') || '';
-    renderFolderPicks();
-  });
-  document.getElementById('editItemFolder').addEventListener('input', () => renderFolderPicks(true));
-
   document.getElementById('editSetWith').addEventListener('change', refreshSetEditor);
   document.getElementById('editSetPrice').addEventListener('input', refreshSetEditor);
   document.getElementById('editItemPrice').addEventListener('input', refreshSetEditor);
@@ -8970,10 +9071,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('editItemBarcode').textContent = barcode;
     document.getElementById('editItemName').value = it.name;
     document.getElementById('editItemFolder').value = itemFolder(it);
-    refreshFolderOptions();
-    renderFolderPicks();
     document.getElementById('editItemQty').value = it.qty;
     document.getElementById('editItemMaker').value = it.maker || '';
+    // After the maker, not before: the buttons open on that person's folders.
+    resetFolderPicks('edit');
     document.getElementById('editItemPrice').value = (it.price !== undefined && it.price !== null) ? it.price : '';
     document.getElementById('editItemLabel').value = it.label || '';
     editPhoto.set(it.photo || '');

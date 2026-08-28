@@ -9,6 +9,31 @@ fixes.
 
 ---
 
+## v1.21.0 - 28 August 2026, 10:41
+
+### Added
+- **The folder buttons are now on all three places an item can be created or changed** —
+  the Add tab, the New item box that appears when you scan something unknown, and Edit
+  item. Before this they were only on Edit item.
+- **Fill in Made by and the buttons narrow to that person's folders.** Put Kay in and you
+  are offered Kay's folders rather than the whole shop's. Change the name and the offer
+  changes with it.
+- It is only ever a first offer, never a wall: there is a **Show all … folders** button on
+  the end, typing overrides it, and the folder an item is already in is never hidden even
+  when it belongs to somebody else.
+- A person with no folders yet — or no name filled in — simply gets the full list, so a
+  new maker is never shut out of the shop's folders.
+- **Generate a code and it all lines up at once:** picking Kay fills in the code, the Made
+  by, and a `Kay/` folder to finish, with Kay's folders already listed underneath.
+
+### Worth knowing
+- Nothing about how folders work has changed, and no folder is ever hidden from you
+  permanently — this only changes which ones are offered first.
+- The buttons refresh as soon as a new folder exists, so an item added into a brand new
+  folder puts it on the list for the next one straight away.
+
+---
+
 ## v1.20.0 - 28 August 2026, 10:28
 
 ### Added
