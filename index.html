@@ -110,6 +110,24 @@
   .folder-children{border-left:2px solid var(--line);margin-left:9px;padding-left:8px;}
   .folder-hint{font-size:11px;color:var(--muted);margin:-6px 0 12px;}
 
+  /* Tap-to-pick list of the folders already in use, under a folder box */
+  .folder-picks{
+    display:flex;flex-wrap:wrap;gap:6px;
+    margin:8px 0 4px;max-height:172px;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+  .folder-pick{
+    font-size:13px;font-weight:600;color:var(--ink);
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:10px 13px;
+    cursor:pointer;user-select:none;-webkit-user-select:none;
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .folder-pick:active{background:var(--line);}
+  .folder-pick.on{
+    background:var(--moss);border-color:var(--moss);color:#fff;
+  }
+
   /* Promo codes */
   .promo-row{
     display:flex;align-items:center;gap:8px;
@@ -1204,6 +1222,8 @@
     <input type="text" id="editItemName">
     <label>Folder</label>
     <input type="text" id="editItemFolder" list="folderOptions" placeholder="None — or e.g. Bracelets/Beaded" autocomplete="off">
+    <div class="folder-picks" id="editFolderPicks"></div>
+    <div class="folder-hint" id="editFolderPicksHint" style="margin-top:0;">Tap a folder you already use, or type a new one. Use / to make a subfolder.</div>
     <label>Starting quantity</label>
     <input type="number" id="editItemQty" inputmode="numeric">
     <label>Made by</label>
@@ -3763,9 +3783,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.18.0';
+  const APP_VERSION = '1.19.0';
   const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '03:32';
+  const BUILD_TIME  = '11:05';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4524,6 +4544,56 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(v) set[v] = 1;
     });
     return Object.keys(set).sort((a,b) => a.localeCompare(b));
+  }
+
+  // How many items sit in a folder, counting anything in its subfolders too —
+  // the same number the folder rows on the stock list show.
+  function folderItemCount(path){
+    let n = 0;
+    Object.keys(items).forEach(bc => {
+      const p = itemFolder(items[bc]);
+      if(p === path || p.indexOf(path + '/') === 0) n++;
+    });
+    return n;
+  }
+
+  // The folders already in use, drawn as buttons under a folder box, so a folder
+  // can be picked by tapping rather than remembering and typing it exactly.
+  // Typing still works — the box and these stay in step with each other.
+  function renderFolderPicks(narrowToTyping){
+    const box = document.getElementById('editFolderPicks');
+    const hint = document.getElementById('editFolderPicksHint');
+    const input = document.getElementById('editItemFolder');
+    if(!box || !input) return;
+    const paths = allFolderPaths();
+    if(!paths.length){
+      box.innerHTML = '';
+      box.style.display = 'none';
+      if(hint) hint.textContent = 'No folders yet — type one here to make the first, e.g. Bracelets.';
+      return;
+    }
+    box.style.display = 'flex';
+    if(hint) hint.textContent = 'Tap a folder you already use, or type a new one. Use / to make a subfolder.';
+    const current = normFolder(input.value);
+
+    // While they are typing, only offer the folders that match, so a shop with
+    // dozens of them narrows down instead of scrolling. The one the item is in
+    // stays on the list whatever has been typed, and a search that matches
+    // nothing falls back to showing them all rather than going blank. Opening
+    // the form is not typing: the whole list has to be there to be browsed,
+    // even though the box already has this item's folder in it.
+    const typed = narrowToTyping ? String(input.value || '').trim().toLowerCase() : '';
+    let shown = paths;
+    if(typed){
+      const hits = paths.filter(p => p.toLowerCase().includes(typed) || p === current);
+      if(hits.length) shown = hits;
+    }
+
+    let html = `<div class="folder-pick ${current ? '' : 'on'}" data-folder="">No folder</div>`;
+    html += shown.map(p =>
+      `<div class="folder-pick ${p === current ? 'on' : ''}" data-folder="${escapeAttr(p)}">📁 ${escapeHtml(p)} <span style="opacity:.7;">${folderItemCount(p)}</span></div>`
+    ).join('');
+    box.innerHTML = html;
   }
 
   // Nest a list of barcodes into { items:[], sub:{name:node} } by folder path.
@@ -8723,6 +8793,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     sumEl.textContent = msg;
   }
 
+  // Tapping one of the folder buttons fills the box; typing keeps the buttons
+  // in step, so whichever way it is done the picked folder is the lit one.
+  document.getElementById('editFolderPicks').addEventListener('click', (e) => {
+    const pick = e.target.closest('.folder-pick');
+    if(!pick) return;
+    document.getElementById('editItemFolder').value = pick.getAttribute('data-folder') || '';
+    renderFolderPicks();
+  });
+  document.getElementById('editItemFolder').addEventListener('input', () => renderFolderPicks(true));
+
   document.getElementById('editSetWith').addEventListener('change', refreshSetEditor);
   document.getElementById('editSetPrice').addEventListener('input', refreshSetEditor);
   document.getElementById('editItemPrice').addEventListener('input', refreshSetEditor);
@@ -8733,6 +8813,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('editItemBarcode').textContent = barcode;
     document.getElementById('editItemName').value = it.name;
     document.getElementById('editItemFolder').value = itemFolder(it);
+    refreshFolderOptions();
+    renderFolderPicks();
     document.getElementById('editItemQty').value = it.qty;
     document.getElementById('editItemMaker').value = it.maker || '';
     document.getElementById('editItemPrice').value = (it.price !== undefined && it.price !== null) ? it.price : '';

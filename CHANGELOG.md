@@ -9,6 +9,26 @@ fixes.
 
 ---
 
+## v1.19.0 - 28 August 2026, 11:05
+
+### Added
+- **Edit item now shows you the folders you already have.** Under the Folder box is a
+  row of buttons, one for each folder in use, with the number of items in each — tap one
+  and the item goes there. No more remembering exactly how a folder was spelt, or which
+  ones exist.
+- The folder the item is in now is the highlighted one, so you can see where it sits
+  before you move it. There is a **No folder** button at the front for taking an item
+  out of every folder.
+- **Start typing and the buttons narrow down to what matches.** Type "bra" and you get
+  the Bracelets ones. Typing still works exactly as before — a folder that does not
+  exist yet is made by typing it, and using / still makes a subfolder.
+
+### Worth knowing
+- Nothing about how folders work has changed — this is only a quicker way to pick one.
+  The Add tab and the bulk Move to folder box are untouched.
+
+---
+
 ## v1.18.0 - 28 August 2026, 03:32
 
 ### Added
