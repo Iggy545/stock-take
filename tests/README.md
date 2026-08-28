@@ -14,6 +14,7 @@ node tests/tombstones.js index.html
 node tests/own-photos.js index.html
 node tests/read-policy.js index.html
 node tests/reconcile-reads.js index.html
+node tests/sales-export.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -28,6 +29,7 @@ Each prints a pass/fail line per check and exits non-zero on failure.
 | `own-photos.js` | Preferring our own copies of the photographs over SumUp's, the fallback for anything we did not archive, and the v1.5.3 escaping hole staying shut | v1.14.0 |
 | `read-policy.js` | Whether a connect may read from the local cache: the team-code switch, a cleared cache, and a refusal never being read as nothing-has-changed | v1.15.0 |
 | `reconcile-reads.js` | The real `reconcile()` against a fake Firestore — that the cheap path costs one read, and that it ends in **identical** shadow state to the full read | v1.15.0 |
+| `sales-export.js` | The sales exports: that the CSV is byte for byte what it always was, and that the .xlsx is a real workbook — every part it promises present, every CRC right, money a number rather than text | v1.16.0 |
 
 ## If a test stops finding the code
 

@@ -203,6 +203,9 @@
   /* The confirm box is always asked for from another modal (Delete inside the
      edit form, for instance), so it has to sit above every other overlay. */
   #confirmModal{z-index:150;}
+  /* Same for the format chooser - the sales report asks for it from inside the
+     report modal. */
+  #formatModal{z-index:150;}
   .modal{
     background:var(--paper);width:100%;max-width:480px;
     border-radius:20px 20px 0 0;padding:20px 18px 24px;
@@ -771,7 +774,7 @@
     </div>
 
     <div class="btn-row" style="margin-top:8px;">
-      <button class="btn btn-secondary" id="exportSalesBtn">⤓ Export sales CSV</button>
+      <button class="btn btn-secondary" id="exportSalesBtn">⤓ Export sales</button>
       <button class="btn btn-secondary" id="undoSaleBtn">↩ Undo last sale</button>
     </div>
     <button class="btn btn-danger" id="clearSalesBtn" style="margin-top:8px;">Clear sales history</button>
@@ -904,6 +907,21 @@
       <button class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
       <button class="btn btn-danger" id="confirmOkBtn">Confirm</button>
     </div>
+  </div>
+</div>
+
+<!-- Which format to export in -->
+<div class="modal-overlay" id="formatModal" style="display:none;">
+  <div class="modal">
+    <h2 id="formatTitle">Export</h2>
+    <p style="font-size:14px;color:var(--muted);line-height:1.45;margin:6px 0 16px;">
+      Excel opens either one. Choose CSV if you are sending it somewhere else.
+    </p>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="formatCsvBtn">⤓ CSV</button>
+      <button class="btn btn-primary" id="formatXlsxBtn">⤓ Excel (.xlsx)</button>
+    </div>
+    <button class="btn btn-secondary" id="formatCancelBtn" style="margin-top:8px;width:100%;">Cancel</button>
   </div>
 </div>
 
@@ -1388,7 +1406,7 @@
     <div id="zBody"></div>
     <div class="btn-row" style="margin-top:10px;">
       <button class="btn btn-secondary" id="zPrintBtn">🖨 Print</button>
-      <button class="btn btn-secondary" id="zCsvBtn">⤓ CSV</button>
+      <button class="btn btn-secondary" id="zExportBtn">⤓ Export</button>
     </div>
     <button class="btn btn-primary" id="zCloseBtn" style="margin-top:8px;">Close</button>
   </div>
@@ -3735,9 +3753,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.15.0';
-  const BUILD_DATE  = '26 Aug 2026';
-  const BUILD_TIME  = '09:41';
+  const APP_VERSION = '1.16.0';
+  const BUILD_DATE  = '28 Aug 2026';
+  const BUILD_TIME  = '03:04';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4031,6 +4049,30 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
   document.getElementById('confirmModal').addEventListener('click', (e) => {
     if(e.target === document.getElementById('confirmModal')) closeConfirm();
+  });
+
+  // Asks CSV or Excel, then hands 'csv' or 'xlsx' to the caller. Cancelling
+  // exports nothing.
+  let formatCallback = null;
+  function askFormat(title, onPick){
+    document.getElementById('formatTitle').textContent = title;
+    document.getElementById('formatModal').style.display = 'flex';
+    formatCallback = onPick;
+  }
+  function closeFormat(){
+    document.getElementById('formatModal').style.display = 'none';
+    formatCallback = null;
+  }
+  function pickFormat(fmt){
+    const cb = formatCallback;
+    closeFormat();
+    if(typeof cb === 'function') cb(fmt);
+  }
+  document.getElementById('formatCsvBtn').addEventListener('click', () => pickFormat('csv'));
+  document.getElementById('formatXlsxBtn').addEventListener('click', () => pickFormat('xlsx'));
+  document.getElementById('formatCancelBtn').addEventListener('click', closeFormat);
+  document.getElementById('formatModal').addEventListener('click', (e) => {
+    if(e.target === document.getElementById('formatModal')) closeFormat();
   });
 
   /* ===================== The website list =====================
@@ -6393,20 +6435,328 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return h;
   }
 
-  // One line per maker, for handing over as a statement or pasting into a sheet.
-  function payoutCsv(fromStr, toStr){
-    const p = makerFigures(fromStr, toStr);
+  /* ===================== Spreadsheet export =====================
+     The sales exports offer CSV or Excel. There is no build step here and no
+     library to fetch, so the .xlsx is written by hand. An .xlsx is a ZIP of XML
+     parts; the ZIP below stores its parts uncompressed (method 0), which is
+     perfectly legal and saves carrying a deflate implementation around.
+
+     Both formats are fed from ONE description of the table - a list of columns
+     and rows of cells - so the two can never drift apart. A cell is plain text,
+     a plain number, or moneyCell(n). Money reaches Excel as a real number shown
+     to two places, so a column of takings can be summed in the sheet; the CSV
+     still writes it as "12.30", exactly as it always did.
+
+     Everything here is covered by tests/sales-export.js, so keep this block
+     free of anything that touches the page.
+     ============================================================== */
+  function moneyCell(n){ return { v: Number(n) || 0, money: true }; }
+
+  // What one cell looks like in a CSV: money to two places, everything else as
+  // it stands. The caller quotes it.
+  function cellCsv(c){
+    if(c && typeof c === 'object') return c.v.toFixed(2);
+    return c == null ? '' : String(c);
+  }
+
+  function tableToCsv(cols, rows){
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    let csv = `Maker,Items,Pay from cash,Pay from card,Pay from website,Pay from other,Owed,`
-            + `Card sales,Website sales,Refunds,Card fee (${p.ratePct}%),Website fee (${p.webRatePct}%)\n`;
-    p.rows.forEach(m => {
-      csv += [m.name, m.units, m.fromCash.toFixed(2), m.fromCard.toFixed(2),
-              m.fromWeb.toFixed(2), m.fromOther.toFixed(2), m.owed.toFixed(2),
-              m.cardSales.toFixed(2), m.webSales.toFixed(2),
-              m.refunds.toFixed(2), m.fee.toFixed(2), m.webFee.toFixed(2)].map(esc).join(',') + '\n';
-    });
+    let csv = cols.map(c => c.h).join(',') + '\n';
+    rows.forEach(r => { csv += r.map(c => esc(cellCsv(c))).join(',') + '\n'; });
     return csv;
   }
+
+  /* ---- the .xlsx itself ---- */
+
+  // XML cannot carry most control characters, and Excel refuses a file that
+  // contains one rather than ignoring it, so they are dropped.
+  function xlsxEsc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+  }
+
+  function xlsxColName(i){
+    let s = '';
+    for(i = i + 1; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s;
+    return s;
+  }
+
+  // Excel will not open a workbook whose sheet name carries one of these
+  // characters, is over 31 long, or repeats another sheet's name.
+  function xlsxSheetName(name, taken){
+    let n = String(name == null ? '' : name).replace(/[\\\/\?\*\[\]:]/g,' ').trim().slice(0,31) || 'Sheet';
+    if(taken){
+      const base = n;
+      let i = 2;
+      while(taken.indexOf(n) !== -1){ n = (base.slice(0,28) + ' ' + i).slice(0,31); i++; }
+      taken.push(n);
+    }
+    return n;
+  }
+
+  function xlsxSheetXml(cols, rows){
+    const text = c => (c && typeof c === 'object') ? c.v.toFixed(2) : (c == null ? '' : String(c));
+    const widths = cols.map((c, i) => {
+      let w = String(c.h).length;
+      rows.forEach(r => { const t = text(r[i]); if(t.length > w) w = t.length; });
+      return Math.min(Math.max(w + 2, 8), 46);
+    });
+    const cell = (ref, c, style) => {
+      if(c && typeof c === 'object') return `<c r="${ref}" s="2"><v>${c.v.toFixed(2)}</v></c>`;
+      if(typeof c === 'number' && isFinite(c)) return `<c r="${ref}"><v>${c}</v></c>`;
+      const t = xlsxEsc(c);
+      if(t === '') return '';
+      return `<c r="${ref}"${style ? ` s="${style}"` : ''} t="inlineStr"><is><t xml:space="preserve">${t}</t></is></c>`;
+    };
+    let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      // the header row stays put when the sheet is scrolled
+      + '<sheetViews><sheetView workbookViewId="0">'
+      + '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+      + '</sheetView></sheetViews>'
+      + '<cols>' + widths.map((w, i) => `<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('') + '</cols>'
+      + '<sheetData><row r="1">'
+      + cols.map((c, i) => cell(xlsxColName(i) + '1', String(c.h), 1)).join('')
+      + '</row>';
+    rows.forEach((r, ri) => {
+      const n = ri + 2;
+      x += `<row r="${n}">` + r.map((c, i) => cell(xlsxColName(i) + n, c)).join('') + '</row>';
+    });
+    return x + '</sheetData></worksheet>';
+  }
+
+  // Two cell formats are all this needs: bold for the header row (s="1") and
+  // money to two places (s="2").
+  const XLSX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
+    + '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="2"><fill><patternFill patternType="none"/></fill>'
+    + '<fill><patternFill patternType="gray125"/></fill></fills>'
+    + '<borders count="1"><border/></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="3">'
+    + '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+    + '<xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'
+    + '</cellXfs>'
+    + '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+    + '</styleSheet>';
+
+  // sheets: [{ name, cols, rows }] -> a Blob ready to be downloaded.
+  function buildXlsx(sheets){
+    const enc = new TextEncoder();
+    const parts = [];
+    const add = (name, str) => parts.push({ name: name, data: enc.encode(str) });
+    const taken = [];
+    const named = sheets.map(s => ({ name: xlsxSheetName(s.name, taken), cols: s.cols, rows: s.rows }));
+
+    add('[Content_Types].xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      + named.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')
+      + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + '</Types>');
+
+    add('_rels/.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      + '</Relationships>');
+
+    add('xl/workbook.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+      + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+      + named.map((s, i) => `<sheet name="${xlsxEsc(s.name).replace(/"/g,'&quot;')}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')
+      + '</sheets></workbook>');
+
+    add('xl/_rels/workbook.xml.rels',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + named.map((s, i) => `<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')
+      + `<Relationship Id="rId${named.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`
+      + '</Relationships>');
+
+    add('xl/styles.xml', XLSX_STYLES);
+    named.forEach((s, i) => add(`xl/worksheets/sheet${i+1}.xml`, xlsxSheetXml(s.cols, s.rows)));
+
+    return zipStore(parts, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+
+  /* ---- the ZIP around it ---- */
+
+  const ZIP_CRC_TABLE = (function(){
+    const t = new Uint32Array(256);
+    for(let n = 0; n < 256; n++){
+      let c = n;
+      for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function zipCrc32(bytes){
+    let c = 0xFFFFFFFF;
+    for(let i = 0; i < bytes.length; i++) c = ZIP_CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // files: [{ name, data: Uint8Array }]. Stored, not deflated.
+  function zipStore(files, mime){
+    const enc = new TextEncoder();
+    const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF];
+    const u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+    // 1 January 1980 in DOS date form. A zero date is what some tools read as
+    // corrupt, and nothing here cares what the stamp says.
+    const DOS_TIME = 0, DOS_DATE = 33;
+    const chunks = [], dir = [];
+    let offset = 0;
+    files.forEach(f => {
+      const nameBytes = enc.encode(f.name);
+      const crc = zipCrc32(f.data);
+      const local = u32(0x04034b50).concat(
+        u16(20), u16(0x0800), u16(0), u16(DOS_TIME), u16(DOS_DATE),
+        u32(crc), u32(f.data.length), u32(f.data.length),
+        u16(nameBytes.length), u16(0));
+      chunks.push(new Uint8Array(local), nameBytes, f.data);
+      dir.push(new Uint8Array(u32(0x02014b50).concat(
+        u16(20), u16(20), u16(0x0800), u16(0), u16(DOS_TIME), u16(DOS_DATE),
+        u32(crc), u32(f.data.length), u32(f.data.length),
+        u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset))));
+      dir.push(nameBytes);
+      offset += local.length + nameBytes.length + f.data.length;
+    });
+    const dirStart = offset;
+    let dirSize = 0;
+    dir.forEach(d => { dirSize += d.length; });
+    const end = new Uint8Array(u32(0x06054b50).concat(
+      u16(0), u16(0), u16(files.length), u16(files.length),
+      u32(dirSize), u32(dirStart), u16(0)));
+    return new Blob(chunks.concat(dir, [end]), { type: mime || 'application/zip' });
+  }
+
+  /* ---- what actually gets exported ---- */
+
+  // The sales log, one row per line sold or refunded. Barcodes and order
+  // numbers stay text so a leading zero survives; the money stays numbers.
+  function salesTable(){
+    const cols = [
+      { h:'Date' }, { h:'Time' }, { h:'Receipt' }, { h:'Type' }, { h:'Barcode' },
+      { h:'Item' }, { h:'Made By' }, { h:'Unit Price' }, { h:'Qty' },
+      { h:'Discount' }, { h:'Net' }, { h:'Payment' }, { h:'Order No' }, { h:'Staff' }
+    ];
+    const rows = [];
+    let total = 0;
+    sales.forEach(s => {
+      const d = new Date(s.at);
+      const q = lineQty(s), net = lineNet(s);
+      total += net;
+      // maker is stored on the sale line; older sales recorded before this
+      // change won't have it, so fall back to the item record
+      const it = items[s.barcode];
+      const maker = s.maker || (it && it.maker) || '';
+      rows.push([
+        d.toLocaleDateString(),
+        d.toLocaleTimeString(),
+        fmtReceiptNo(s.receiptNo),
+        s.kind === 'refund' ? 'refund' : 'sale',
+        s.barcode,
+        s.name,
+        maker,
+        moneyCell(s.price),
+        q,
+        moneyCell(s.disc),
+        moneyCell(net),
+        s.pay || '',
+        s.webRef || '',
+        s.staff || ''
+      ]);
+    });
+    rows.push(['TOTAL','','','','','','','','','', moneyCell(total),'','','']);
+    return { cols: cols, rows: rows };
+  }
+
+  // The three tables behind the sales report: the figures, what sold most, and
+  // what is owed to the makers. f comes from zFigures, p from makerFigures.
+  function zSummaryTable(f, label){
+    return {
+      cols: [{ h:'Metric' }, { h:'Value' }],
+      rows: [
+        ['Period', label],
+        ['Net takings', moneyCell(f.net)],
+        ['Transactions', f.txns],
+        ['Items sold', f.units],
+        ['Cash', moneyCell(f.pay.cash)],
+        ['Card', moneyCell(f.pay.card)],
+        ['Website', moneyCell(f.pay.web)],
+        ['Other', moneyCell(f.pay.other)],
+        ['Discounts', moneyCell(f.discounts)],
+        ['Refunds', moneyCell(f.refunds)]
+      ]
+    };
+  }
+
+  function zSellersTable(f){
+    return {
+      cols: [{ h:'Item' }, { h:'Qty' }, { h:'Net' }],
+      rows: Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net - a.net)
+              .map(t => [t.name, t.qty, moneyCell(t.net)])
+    };
+  }
+
+  // One line per maker, for handing over as a statement or pasting into a sheet.
+  function payoutTable(p){
+    return {
+      cols: [
+        { h:'Maker' }, { h:'Items' }, { h:'Pay from cash' }, { h:'Pay from card' },
+        { h:'Pay from website' }, { h:'Pay from other' }, { h:'Owed' },
+        { h:'Card sales' }, { h:'Website sales' }, { h:'Refunds' },
+        { h:`Card fee (${p.ratePct}%)` }, { h:`Website fee (${p.webRatePct}%)` }
+      ],
+      rows: p.rows.map(m => [
+        m.name, m.units, moneyCell(m.fromCash), moneyCell(m.fromCard), moneyCell(m.fromWeb),
+        moneyCell(m.fromOther), moneyCell(m.owed), moneyCell(m.cardSales), moneyCell(m.webSales),
+        moneyCell(m.refunds), moneyCell(m.fee), moneyCell(m.webFee)
+      ])
+    };
+  }
+
+  // The report as one CSV: the three tables stacked under their own headings,
+  // which is the shape it has always been handed over in.
+  function zReportCsv(f, label, p){
+    const summary = zSummaryTable(f, label);
+    const sellers = zSellersTable(f);
+    let csv = tableToCsv(summary.cols, summary.rows);
+    csv += '\nTop sellers\n' + tableToCsv(sellers.cols, sellers.rows);
+    // the payouts heading goes in even when no maker sold anything in the
+    // period, which is how this report has always come out
+    if(p){
+      const pay = payoutTable(p);
+      csv += '\nSupplier payouts\n' + tableToCsv(pay.cols, pay.rows);
+    }
+    return csv;
+  }
+
+  // The same report as a workbook, one table per sheet.
+  function zReportSheets(f, label, p){
+    const summary = zSummaryTable(f, label);
+    const sellers = zSellersTable(f);
+    const sheets = [
+      { name:'Summary', cols: summary.cols, rows: summary.rows },
+      { name:'Top sellers', cols: sellers.cols, rows: sellers.rows }
+    ];
+    if(p){
+      const pay = payoutTable(p);
+      sheets.push({ name:'Supplier payouts', cols: pay.cols, rows: pay.rows });
+    }
+    return sheets;
+  }
+  /* =================== end spreadsheet export =================== */
 
   function zBodyHtml(fromStr, toStr){
     const f = zFigures(fromStr, toStr);
@@ -6494,29 +6844,23 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       `<div class="r-head"><div class="r-shop">${escapeHtml(getShopName()||'Report')}</div>`+
       `<div>Sales report — ${r.label}</div></div><hr>` + zBodyHtml(r.from, r.to));
   });
-  document.getElementById('zCsvBtn').addEventListener('click', () => {
+  document.getElementById('zExportBtn').addEventListener('click', () => {
     const r = zCurrentRange();
     const f = zFigures(r.from, r.to);
-    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    let csv = 'Metric,Value\n';
-    [['Period',r.label],['Net takings',f.net.toFixed(2)],['Transactions',f.txns],
-     ['Items sold',f.units],['Cash',f.pay.cash.toFixed(2)],['Card',f.pay.card.toFixed(2)],
-     ['Website',f.pay.web.toFixed(2)],['Other',f.pay.other.toFixed(2)],
-     ['Discounts',f.discounts.toFixed(2)],
-     ['Refunds',f.refunds.toFixed(2)]
-    ].forEach(r => { csv += r.map(esc).join(',') + '\n'; });
-    csv += '\nTop sellers\nItem,Qty,Net\n';
-    Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net-a.net).forEach(t => {
-      csv += [t.name, t.qty, t.net.toFixed(2)].map(esc).join(',') + '\n';
+    const p = makerFigures(r.from, r.to);
+    const name = `report-${r.label.replace(/[^0-9a-zA-Z-]+/g,'_')}`;
+    askFormat('Export sales report', fmt => {
+      if(fmt === 'xlsx'){
+        downloadBlob(buildXlsx(zReportSheets(f, r.label, p)), name + '.xlsx');
+        showToast('Report spreadsheet exported', 'success');
+        return;
+      }
+      // Excel opens .csv in the system codepage unless the file starts with a
+      // UTF-8 BOM, which is why em dashes and accents came out as "â€”".
+      downloadBlob(new Blob(['﻿' + zReportCsv(f, r.label, p)],
+        { type:'text/csv;charset=utf-8;' }), name + '.csv');
+      showToast('Report CSV exported', 'success');
     });
-    const payouts = payoutCsv(r.from, r.to);
-    if(payouts) csv += '\nSupplier payouts\n' + payouts;
-    // Excel opens .csv in the system codepage unless the file starts with a
-    // UTF-8 BOM, which is why em dashes and accents came out as "â€”".
-    const blob = new Blob(['﻿' + csv], { type:'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    triggerDownload(url, `report-${r.label.replace(/[^0-9a-zA-Z-]+/g,'_')}.csv`);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
   // ---- Receipt settings ----
@@ -6737,47 +7081,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   document.getElementById('exportSalesBtn').addEventListener('click', () => {
     if(sales.length === 0){ showToast('No sales to export', 'error'); return; }
-    let csv = 'Date,Time,Receipt,Type,Barcode,Item,Made By,Unit Price,Qty,Discount,Net,Payment,Order No,Staff\n';
-    let total = 0;
-    sales.forEach(s => {
-      const d = new Date(s.at);
-      const q = lineQty(s), net = lineNet(s);
-      total += net;
-      // maker is stored on the sale line; older sales recorded before this
-      // change won't have it, so fall back to the item record
-      const it = items[s.barcode];
-      const maker = s.maker || (it && it.maker) || '';
-      const row = [
-        d.toLocaleDateString(),
-        d.toLocaleTimeString(),
-        fmtReceiptNo(s.receiptNo),
-        s.kind === 'refund' ? 'refund' : 'sale',
-        s.barcode,
-        s.name,
-        maker,
-        (Number(s.price)||0).toFixed(2),
-        q,
-        (Number(s.disc)||0).toFixed(2),
-        net.toFixed(2),
-        s.pay || '',
-        s.webRef || '',
-        s.staff || ''
-      ];
-      csv += row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',') + '\n';
+    const t = salesTable();
+    const name = `sales-${new Date().toISOString().slice(0,10)}`;
+    askFormat('Export sales', fmt => {
+      if(fmt === 'xlsx'){
+        downloadBlob(buildXlsx([{ name:'Sales', cols: t.cols, rows: t.rows }]), name + '.xlsx');
+        showToast('Sales spreadsheet exported', 'success');
+        return;
+      }
+      // BOM so Excel reads the file as UTF-8 (see report export)
+      downloadBlob(new Blob(['﻿' + tableToCsv(t.cols, t.rows)],
+        { type: 'text/csv;charset=utf-8;' }), name + '.csv');
+      showToast('Sales CSV exported', 'success');
     });
-    csv += `"TOTAL","","","","","","","","","","${total.toFixed(2)}","","",""\n`;
-
-    // BOM so Excel reads the file as UTF-8 (see report export)
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sales-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Sales CSV exported', 'success');
   });
 
   // ---- Tabs ----
@@ -7255,6 +7571,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     a.click();
     document.body.removeChild(a);
     showToast('Downloaded', 'success');
+  }
+
+  // Same thing for a blob we made ourselves. The exports say their own piece
+  // afterwards, so this one is quiet. The URL is released late because Safari
+  // has been known to cancel the download if it goes straight away.
+  function downloadBlob(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   document.getElementById('printLabelBtn').addEventListener('click', () => {

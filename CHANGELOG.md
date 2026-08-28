@@ -9,6 +9,32 @@ fixes.
 
 ---
 
+## v1.16.0 - 28 August 2026, 03:04
+
+### Added
+- **The sales exports now ask whether you want CSV or Excel.** Both export buttons - the
+  **Export sales** button on the Sales tab and **Export** in the sales report - now offer
+  a choice. Nothing else about them changed.
+- **The Excel file is a real spreadsheet, not a renamed CSV.** Prices and takings arrive
+  as numbers, so you can select a column and see it added up, or write your own sum
+  against it. The heading row is bold and stays put when you scroll, and the columns come
+  out already wide enough to read.
+- **The sales report becomes three tabs in one workbook** - Summary, Top sellers and
+  Supplier payouts - instead of three lumps stacked in one column.
+
+### Worth knowing
+- **The CSV files are exactly what they always were**, down to the byte, so anything you
+  or the accountant already do with them is untouched. There is a test that checks this
+  against the old code rather than taking anyone's word for it.
+- **Barcodes and order numbers stay text** in the Excel file. Written as numbers they
+  would lose a leading zero, and then they would no longer match anything in the till.
+- Excel opens either format. CSV is still the one to pick if the file is going into
+  something else - most other systems read it and not much else.
+- Nothing is downloaded from anywhere to do this: the app writes the .xlsx itself, so it
+  still works with no internet.
+
+---
+
 ## v1.15.0 - 26 August 2026, 09:41
 
 ### Changed
