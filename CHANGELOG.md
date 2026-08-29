@@ -9,6 +9,36 @@ fixes.
 
 ---
 
+## v1.29.0 - 29 August 2026, 17:35
+
+### Added
+- **One description for a whole group of variants.** When an item's name puts it in a group
+  - anything with the em dash in it, like `Wind Spinner — Blue` - and the others in that
+  group already have a website description, a tick appears above the description box:
+  **"Use the same description as the other 5 in Wind Spinner"**. Tick it and the box fills
+  with what the group says and greys out; untick it and whatever you had typed comes back.
+  It is on the Add form and the Edit item form.
+- **Changing one of them offers to change the rest.** Save a description that the others in
+  the group still hold the old version of, and the app asks whether to update them too, with
+  the number spelled out. Say no and nothing else is touched.
+
+### Worth knowing
+- It **copies the words**; it does not link the items. Each variant keeps its own
+  description on its own record, exactly as before, so nothing about exports, the website
+  feed or sync changes. Nothing is stored to say a description is shared - the offer on
+  save is what keeps a group together afterwards.
+- Only variants **still saying the old thing** are offered. One you have written separately
+  is left alone, and so is one with no description at all - never having had a description
+  is not the same as having this one.
+- Why it matters: the website shows whichever variant the customer picked out of the
+  dropdown, so a group whose descriptions disagree makes the words change under them as
+  they click through the colours.
+- The offer is always a tap. Nothing is rewritten on its own, for the same reason a hyphen
+  is never quietly promoted to an em dash: two products can look like variants of each
+  other without being it.
+
+---
+
 ## v1.28.0 - 29 August 2026, 15:20
 
 ### Changed

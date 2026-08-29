@@ -18,7 +18,7 @@ const SRC = HTML.slice(a, b);
 
 const ctx = { console };
 vm.createContext(ctx);
-vm.runInContext(SRC + '\nthis.T = { VARIANT_DASH, variantSplit, variantGroupsFrom, variantDashFix, variantJoin };', ctx);
+vm.runInContext(SRC + '\nthis.T = { VARIANT_DASH, variantSplit, variantGroupsFrom, variantDashFix, variantJoin, variantGroupDesc, variantDescFollowers };', ctx);
 const T = ctx.T;
 
 let pass = 0, fail = 0;
@@ -188,6 +188,106 @@ console.log('\nWhat comes back out');
     back.group === 'Wind Spinner' && back.label === 'Red', fixed);
   const after = T.variantGroupsFrom(['Wind Spinner ' + EM + ' Blue', fixed]);
   check('and the group now has two in it', after.length === 1 && after[0].n === 2);
+}
+
+// One description across a group. The website shows whichever variant the
+// customer picked, so a group that disagrees with itself makes the words change
+// under them - and the two functions here are what stops that: one offers the
+// group's words on the way in, one offers to carry a change across on the way
+// out.
+console.log('\nThe description a group already uses');
+{
+  const others = [
+    { name: 'Wind Spinner ' + EM + ' Blue',  webDesc: 'Hand made, spins in the lightest breeze.' },
+    { name: 'Wind Spinner ' + EM + ' Red',   webDesc: 'Hand made, spins in the lightest breeze.' },
+    { name: 'Rose Quartz Bracelet',          webDesc: 'Not a variant of anything.' }
+  ];
+  const r = T.variantGroupDesc('Wind Spinner ' + EM + ' Green', others);
+  check('finds what the group already says', r.desc === 'Hand made, spins in the lightest breeze.', r.desc);
+  check('counts only the ones that say it', r.same === 2, String(r.same));
+  check('counts the group itself separately', r.n === 2, String(r.n));
+  check('names the group', r.group === 'Wind Spinner', r.group);
+}
+{
+  // An item with no dash in its name is its own card on the website, so it is
+  // nobody's sibling however much of the name it shares.
+  const r = T.variantGroupDesc('Rose Quartz Bracelet', [
+    { name: 'Rose Quartz Bracelet ' + EM + ' Small', webDesc: 'Six inches.' }
+  ]);
+  check('a name with no dash is in no group', r.desc === '' && r.n === 0, r.desc);
+}
+{
+  const r = T.variantGroupDesc('Wind Spinner ' + EM + ' Green', [
+    { name: 'Wind Spinner ' + EM + ' Blue', webDesc: '' },
+    { name: 'Wind Spinner ' + EM + ' Red' }
+  ]);
+  check('a group nobody has described offers nothing', r.desc === '' && r.same === 0);
+  check('but the group is still seen', r.n === 2, String(r.n));
+}
+{
+  // Storage hands items back in whatever order it likes. The answer must not.
+  const a = { name: 'Oil ' + EM + ' 10ml', webDesc: 'Long one. Blended in the shop.' };
+  const b = { name: 'Oil ' + EM + ' 30ml', webDesc: 'Short one.' };
+  const c = { name: 'Oil ' + EM + ' 50ml', webDesc: 'Short one.' };
+  const first  = T.variantGroupDesc('Oil ' + EM + ' 5ml', [a, b, c]).desc;
+  const second = T.variantGroupDesc('Oil ' + EM + ' 5ml', [c, b, a]).desc;
+  check('the commonest wins', first === 'Short one.', first);
+  check('and the order items arrive in changes nothing', first === second, second);
+}
+{
+  const two = [
+    { name: 'Oil ' + EM + ' 10ml', webDesc: 'Longer of the two.' },
+    { name: 'Oil ' + EM + ' 30ml', webDesc: 'Short.' }
+  ];
+  const r1 = T.variantGroupDesc('Oil ' + EM + ' 5ml', two);
+  const r2 = T.variantGroupDesc('Oil ' + EM + ' 5ml', two.slice().reverse());
+  check('a tie breaks the same way either way round', r1.desc === r2.desc, r1.desc + '|' + r2.desc);
+  check('and a tie takes the longer one', r1.desc === 'Longer of the two.', r1.desc);
+}
+{
+  // A description of "constructor" must not be read off Object.prototype and
+  // counted as a function.
+  const r = T.variantGroupDesc('Oil ' + EM + ' 5ml', [
+    { name: 'Oil ' + EM + ' 10ml', webDesc: 'constructor' }
+  ]);
+  check('an awkward description is still just a string', r.desc === 'constructor' && r.same === 1);
+}
+
+console.log('\nCarrying a changed description across');
+{
+  const WAS = 'Hand made, spins in the lightest breeze.';
+  const others = [
+    { id: 'a', name: 'Wind Spinner ' + EM + ' Blue', webDesc: WAS },
+    { id: 'b', name: 'Wind Spinner ' + EM + ' Red',  webDesc: '  ' + WAS + ' ' },
+    { id: 'c', name: 'Wind Spinner ' + EM + ' Gold', webDesc: 'Gold one, written on its own.' },
+    { id: 'd', name: 'Wind Spinner ' + EM + ' Pink' },
+    { id: 'e', name: 'Wind Chime ' + EM + ' Blue',   webDesc: WAS }
+  ];
+  const got = T.variantDescFollowers('Wind Spinner ' + EM + ' Green', WAS, others).map(o => o.id).join('');
+  check('reaches the ones still saying the old thing', got.indexOf('a') > -1 && got.indexOf('b') > -1, got);
+  check('spacing round it is not a difference', got === 'ab', got);
+  check('leaves one written separately alone', got.indexOf('c') < 0, got);
+  check('leaves an empty one alone', got.indexOf('d') < 0, got);
+  check('never leaves the group', got.indexOf('e') < 0, got);
+}
+{
+  const others = [{ name: 'Wind Spinner ' + EM + ' Blue', webDesc: '' }];
+  check('an item that never had a description carries nothing across',
+    T.variantDescFollowers('Wind Spinner ' + EM + ' Green', '', others).length === 0);
+  check('and neither does one with no group at all',
+    T.variantDescFollowers('Rose Quartz Bracelet', 'Anything.', others).length === 0);
+}
+{
+  // The two working together: what the tick copies in is exactly what the offer
+  // would later recognise as the old wording.
+  const WAS = 'Blended in the shop.';
+  const others = [
+    { name: 'Oil ' + EM + ' 10ml', webDesc: WAS },
+    { name: 'Oil ' + EM + ' 30ml', webDesc: WAS }
+  ];
+  const copied = T.variantGroupDesc('Oil ' + EM + ' 5ml', others).desc;
+  check('what the tick copies is what the offer later matches on',
+    T.variantDescFollowers('Oil ' + EM + ' 5ml', copied, others).length === 2, copied);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

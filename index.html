@@ -355,6 +355,10 @@
     resize:vertical;min-height:76px;transition:min-height .18s ease;
   }
   .desc-ta:focus{min-height:200px;}
+  /* Locked because the tick above it is on and the words belong to the whole
+     group. Greyed rather than hidden: what is about to be shared is the thing
+     you want to be able to read before you agree to share it. */
+  .desc-ta[readonly]{background:var(--paper);color:var(--muted);}
 
   .value-summary{
     display:flex;justify-content:space-between;align-items:center;
@@ -835,6 +839,10 @@
           <span>This one sells on the website too</span>
         </label>
         <div id="manualWebMore">
+          <label class="web-check" id="addDescSameWrap" for="addDescSame" style="display:none;">
+            <input type="checkbox" id="addDescSame">
+            <span id="addDescSameText"></span>
+          </label>
           <label>Description for the website (optional)</label>
           <textarea id="manualWebDesc" class="desc-ta" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."></textarea>
         </div>
@@ -1345,6 +1353,10 @@
         <span>This one sells on the website too</span>
       </label>
       <div id="editWebMore" style="display:none;">
+        <label class="web-check" id="editDescSameWrap" for="editDescSame" style="display:none;">
+          <input type="checkbox" id="editDescSame">
+          <span id="editDescSameText"></span>
+        </label>
         <label>Description for the website (optional)</label>
         <textarea id="editWebDesc" class="desc-ta" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."></textarea>
       </div>
@@ -3899,9 +3911,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.28.0';
+  const APP_VERSION = '1.29.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '15:20';
+  const BUILD_TIME  = '17:35';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4910,6 +4922,52 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(label.toLowerCase() === g.toLowerCase()) label = '';
     return g + ' ' + VARIANT_DASH + ' ' + label;
   }
+
+  // The description the rest of a group is already using, for the tick that
+  // offers to reuse it. Variants are separate items in here with a webDesc
+  // each, and the website shows whichever one the customer has picked out of
+  // the dropdown (shop-site/item.html) - so a group whose descriptions
+  // disagree makes the words change under them as they click the colours.
+  //
+  // "The rest of the group" is by NAME, the same em-dash split the website
+  // uses, and never the item being written. Where they disagree the commonest
+  // wins, then the longest, so the answer cannot depend on the order items
+  // happen to come out of storage.
+  function variantGroupDesc(name, others){
+    const group = variantSplit(name).group;
+    if(!group) return { group:'', desc:'', n:0, same:0 };
+    const key = group.toLowerCase();
+    const tally = Object.create(null);
+    let n = 0;
+    (others || []).forEach(o => {
+      if(!o || variantSplit(o.name).group.toLowerCase() !== key) return;
+      n++;
+      const d = String(o.webDesc == null ? '' : o.webDesc).trim();
+      if(!d) return;
+      tally[d] = (tally[d] || 0) + 1;
+    });
+    const desc = Object.keys(tally).sort((a, b) =>
+      tally[b] - tally[a] || b.length - a.length || (a < b ? -1 : 1))[0] || '';
+    return { group: group, desc: desc, n: n, same: desc ? tally[desc] : 0 };
+  }
+
+  // Changing one variant's description leaves the others saying the old thing,
+  // which is the very disagreement the tick exists to prevent - so a save
+  // offers to carry it across. These are the ones it would reach.
+  //
+  // ONLY the ones still holding the old text word for word. A variant somebody
+  // has written separately is a deliberate difference and is not ours to
+  // overwrite, and neither is an empty one: never having had a description is
+  // not the same as having this one.
+  function variantDescFollowers(name, oldDesc, others){
+    const group = variantSplit(name).group;
+    const was = String(oldDesc == null ? '' : oldDesc).trim();
+    if(!group || !was) return [];
+    const key = group.toLowerCase();
+    return (others || []).filter(o => o
+      && variantSplit(o.name).group.toLowerCase() === key
+      && String(o.webDesc == null ? '' : o.webDesc).trim() === was);
+  }
   // ---- end variant names ----
 
   // The three forms that can put an item in a folder — Edit item, the Add tab,
@@ -5145,7 +5203,103 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         hint.textContent = 'Same thing in more than one colour or size? Tap below and the website puts them on one card with a dropdown.';
       }
     }
+
+    // The name is what says which group this is, so the offer to share that
+    // group's description belongs on the same redraw.
+    renderDescSame(which);
   }
+
+  // ---- one description across a group ----
+  //
+  // The tick under "sells on the website too": use what the rest of this
+  // group already says. See variantGroupDesc for why a group wants one set of
+  // words rather than five.
+  //
+  // It COPIES. Nothing is written on the item to say the description is
+  // shared, because a flag like that starts lying the moment somebody edits
+  // one box on its own. What holds them together afterwards is the offer at
+  // the end of a save, below.
+  //
+  // The New item box for an unknown scan is not in here - it has no
+  // description field to share.
+  const DESC_SAME = {
+    add:  { name:'manualName',   desc:'manualWebDesc', wrap:'addDescSameWrap',  box:'addDescSame',  text:'addDescSameText'  },
+    edit: { name:'editItemName', desc:'editWebDesc',   wrap:'editDescSameWrap', box:'editDescSame', text:'editDescSameText' }
+  };
+
+  // What the box said before the tick took it over, so unticking hands it back
+  // instead of leaving the group's words sitting there as if they were typed.
+  const descSameWas = {};
+
+  // Every OTHER item. Nothing is ever its own sibling - an item that counted
+  // itself would offer to copy its own description onto itself.
+  function descSameOthers(which){
+    const skip = (which === 'edit') ? currentEditBarcode : null;
+    return Object.keys(items).filter(bc => bc !== skip).map(bc => items[bc]);
+  }
+
+  function renderDescSame(which){
+    const cfg = DESC_SAME[which];
+    if(!cfg) return;
+    const wrap = document.getElementById(cfg.wrap);
+    const box  = document.getElementById(cfg.box);
+    const ta   = document.getElementById(cfg.desc);
+    const nameEl = document.getElementById(cfg.name);
+    if(!wrap || !box || !ta || !nameEl) return;
+
+    const found = variantGroupDesc(nameEl.value, descSameOthers(which));
+    if(!found.desc){
+      // No group, or a group nobody has described yet. If the tick was on it
+      // comes off, and the words it put in go back where they came from: they
+      // belong to a group this item has just stopped being part of.
+      if(box.checked){ box.checked = false; ta.value = descSameWas[which] || ''; }
+      delete descSameWas[which];
+      ta.readOnly = false;
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = 'flex';
+    document.getElementById(cfg.text).textContent =
+      'Use the same description as the other ' + (found.same === 1 ? 'one' : found.same)
+      + ' in “' + found.group + '”';
+    // Tapped onto a different group with the tick already on: the words follow
+    // the group, which is what a wrong tap needs to be able to do.
+    if(box.checked){ ta.value = found.desc; ta.readOnly = true; }
+  }
+
+  // A form opening, or the Add tab clearing down after an item goes in. The
+  // tick starts off every time - it is a thing you do to this item now, not a
+  // setting the form remembers.
+  function resetDescSame(which){
+    const cfg = DESC_SAME[which];
+    if(!cfg) return;
+    const box = document.getElementById(cfg.box);
+    const ta  = document.getElementById(cfg.desc);
+    if(box) box.checked = false;
+    if(ta) ta.readOnly = false;
+    delete descSameWas[which];
+    renderDescSame(which);
+  }
+
+  Object.keys(DESC_SAME).forEach(which => {
+    const cfg = DESC_SAME[which];
+    const box = document.getElementById(cfg.box);
+    const ta  = document.getElementById(cfg.desc);
+    if(!box || !ta) return;
+    box.addEventListener('change', () => {
+      if(box.checked){
+        descSameWas[which] = ta.value;
+        ta.value = variantGroupDesc(document.getElementById(cfg.name).value,
+                                    descSameOthers(which)).desc;
+        ta.readOnly = true;
+      } else {
+        ta.value = descSameWas[which] || '';
+        delete descSameWas[which];
+        ta.readOnly = false;
+      }
+    });
+  });
+  // ---- end one description across a group ----
 
   Object.keys(VARIANT_PICKERS).forEach(which => {
     const cfg = VARIANT_PICKERS[which];
@@ -9067,6 +9221,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // Back to ticked, which is the default for a reason - see the form.
     document.getElementById('manualWebOn').checked = true;
     document.getElementById('manualWebMore').style.display = '';
+    // Explicitly, and before the name box is read again: the description this
+    // one shared is not the next one's, and the box must not be handed back
+    // whatever was in it before the tick.
+    resetDescSame('add');
     manualCodeLetter = '';
     resetFolderPicks('add');
     resetLabelPicks('add');
@@ -9722,6 +9880,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     document.getElementById('editWebOn').checked = !!it.web;
     document.getElementById('editWebDesc').value = it.webDesc || '';
+    // After the description is in, not before - and it opens unticked even
+    // when this item already says exactly what its group says. Unticked means
+    // "these are your own words", which is true either way, and nothing is
+    // stored anywhere that could claim otherwise.
+    resetDescSame('edit');
     renderEditWebState(it);
 
     // Set pricing: own rule, partner in someone else's rule, or neither
@@ -9754,6 +9917,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   document.getElementById('saveEditItem').addEventListener('click', () => {
     const it = items[currentEditBarcode];
+    // Which item this save was about, kept because the offer that follows it
+    // runs after the modal has closed.
+    const savedBarcode = currentEditBarcode;
 
     // Work the set rule out first and bail on a bad one, so a rejected save
     // leaves the item exactly as it was rather than half-changed.
@@ -9798,6 +9964,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // else: the form opened without a photo and still has none — nothing to say.
     it.counted = parseInt(document.getElementById('editItemCounted').value,10) || 0;
     if(document.getElementById('editWebOn').checked) it.web = 1; else delete it.web;
+    // Held on to before it is overwritten: it is what tells the other variants
+    // apart from one another once this one has moved on. See offerDescCarryOver.
+    const wasDesc = String(it.webDesc || '').trim();
     const webDesc = document.getElementById('editWebDesc').value.trim();
     if(webDesc) it.webDesc = webDesc; else delete it.webDesc;
     if(newSet) it.set = newSet;
@@ -9807,7 +9976,43 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     renderList(document.getElementById('searchBox').value);
     renderTill();
     showToast('Item updated', 'success');
+    offerDescCarryOver(savedBarcode, wasDesc);
   });
+
+  // The description on one variant has just changed. The others still say what
+  // it used to, so the website would now read differently depending on which
+  // colour the customer clicked - the exact thing the tick on the form is
+  // there to stop. So it is offered, with the number spelled out.
+  //
+  // Offered, never automatic, for the same reason a hyphen is never quietly
+  // promoted to an em dash: two products can look like variants of each other
+  // without being it, and writing over somebody's words cannot be undone from
+  // in here.
+  function offerDescCarryOver(barcode, wasDesc){
+    const it = items[barcode];
+    if(!it) return;
+    const now = String(it.webDesc || '').trim();
+    if(!now || now === String(wasDesc || '').trim()) return;
+    const others = Object.keys(items).filter(bc => bc !== barcode)
+      .map(bc => ({ barcode: bc, name: items[bc].name, webDesc: items[bc].webDesc }));
+    const behind = variantDescFollowers(it.name, wasDesc, others);
+    if(!behind.length) return;
+    const one = behind.length === 1;
+    askConfirm(
+      'Change the others too?',
+      (one ? 'One other item' : behind.length + ' other items')
+        + ' in “' + variantSplit(it.name).group + '” still '
+        + (one ? 'has' : 'have') + ' the description this one used to have. Update '
+        + (one ? 'it' : 'them') + ' to match?',
+      one ? 'Update it' : 'Update all ' + behind.length,
+      () => {
+        behind.forEach(b => { if(items[b.barcode]) items[b.barcode].webDesc = now; });
+        if(!saveItems()) return;
+        renderList(document.getElementById('searchBox').value);
+        showToast(one ? 'One more updated' : behind.length + ' more updated', 'success');
+      }
+    );
+  }
   document.getElementById('deleteItemBtn').addEventListener('click', () => {
     const it = items[currentEditBarcode];
     const bc = currentEditBarcode;
