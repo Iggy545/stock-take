@@ -9,6 +9,19 @@ fixes.
 
 ---
 
+## v1.31.1 - 29 August 2026, 21:35
+
+### Changed
+- The "sold on the website" box said **"Paid for already."** It now says **"Sold online."**
+  The till never sees the payment for a website sale - it only records that one was rung
+  through - so it was stating something it had no way of knowing. It would have been wrong
+  in two ordinary cases: ringing an item through to hold it for somebody before the money
+  is in, and an order cancelled or refunded after the fact.
+- What it says now is what the till actually knows: this was recorded as a website sale and
+  the stock has come off, so do not sell it again at the counter.
+
+---
+
 ## v1.31.0 - 29 August 2026, 21:20
 
 ### Added

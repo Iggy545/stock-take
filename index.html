@@ -192,7 +192,8 @@
 
   /* Sold on the website. Louder than the other banners on purpose: the others
      are notices, this one is a job -- something is still on the shelf that has
-     already been paid for, and a customer at the counter can pick it up. */
+     already been sold, and a customer at the counter can pick it up. The till
+     never sees the payment for a web sale, so it does not claim to. */
   .websold-banner{
     display:flex;align-items:center;gap:10px;width:100%;text-align:left;
     background:var(--moss);border:1px solid var(--moss-dark);border-radius:12px;
@@ -1066,7 +1067,7 @@
   <div class="modal">
     <h2>🛍️ Sold on the website</h2>
     <p class="websold-lead">
-      Paid for already. Take it off the shop floor before someone buys it at the counter.
+      Sold online. Take it off the shop floor before someone buys it at the counter.
     </p>
     <div id="webSoldList"></div>
     <div class="btn-row">
@@ -3978,9 +3979,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.31.0';
+  const APP_VERSION = '1.31.1';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '21:20';
+  const BUILD_TIME  = '21:35';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
