@@ -9,6 +9,22 @@ fixes.
 
 ---
 
+## v1.26.0 - 29 August 2026, 12:08
+
+### Added
+- **The label wording can be tapped now, the same way a folder is.** *Label needed* was a
+  plain box with a quiet list behind it that only appeared once you had typed the first
+  letter of a wording you already use - and there is no guessing the first letter of a
+  wording somebody else wrote. It now has the same folded-away **Choose label** button the
+  folders got in v1.25.0: tap it and every wording the shop already uses is there to tap,
+  each with how many items ask for it. Tap one and it folds back up showing the choice.
+- Typing still works and still narrows the list, and a wording nobody has used yet reads
+  **new** on the button, so a fresh one is deliberate rather than a slip.
+- The button only appears once something has been labelled - on a shop with no labels yet
+  there is nothing to offer, and the box is exactly as it was.
+
+---
+
 ## v1.25.0 - 29 August 2026, 11:28
 
 ### Changed
