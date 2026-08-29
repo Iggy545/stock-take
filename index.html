@@ -937,7 +937,16 @@
       <button class="btn btn-secondary" id="exportSalesBtn">⤓ Export sales</button>
       <button class="btn btn-secondary" id="undoSaleBtn">↩ Undo last sale</button>
     </div>
-    <button class="btn btn-danger" id="clearSalesBtn" style="margin-top:8px;">Clear sales history</button>
+    <!-- "Clear sales history" was here and was REMOVED in v1.32.0. Do not put it
+         back on this tab. It was one tap from the till and one confirm away
+         from wiping the lot, and with sync on it did not clear this device --
+         emptying the list writes a delete marker for every sale, so every other
+         till loses them too. It also destroys the basis of the supplier payout
+         figures, which is real money owed to real people. Nothing needed it:
+         the report is date-ranged (day / month / year / custom), so a clean
+         figure never required clearing anything. If history ever genuinely has
+         to be trimmed, that is a dated tidy-up in Settings after an export --
+         not a wipe-everything button beside Export sales. -->
   </div>
 
   <div id="tab-settings" style="display:none;">
@@ -3979,9 +3988,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.31.1';
+  const APP_VERSION = '1.32.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '21:35';
+  const BUILD_TIME  = '21:45';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -8512,21 +8521,6 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         renderList(document.getElementById('searchBox').value);
         renderSold();
         showToast(isRefund ? 'Refund undone' : 'Sale undone', 'success');
-      }
-    );
-  });
-
-  document.getElementById('clearSalesBtn').addEventListener('click', () => {
-    if(sales.length === 0){ showToast('No sales history to clear', 'error'); return; }
-    askConfirm(
-      'Clear sales history?',
-      'All sales records and revenue totals will be deleted. Stock counts are NOT changed — sold items stay deducted. Export a CSV first if you want a record.',
-      'Clear sales',
-      () => {
-        sales = [];
-        saveSales();
-        renderSold();
-        showToast('Sales history cleared', 'success');
       }
     );
   });

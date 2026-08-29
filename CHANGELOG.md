@@ -9,6 +9,30 @@ fixes.
 
 ---
 
+## v1.32.0 - 29 August 2026, 21:45
+
+### Removed
+- **"Clear sales history" is gone from the Sales tab.** It sat one tap away from the till,
+  beside Export sales, and a confirm box is no protection against somebody tapping through
+  it. Three reasons it had to go rather than just move:
+  - **It did not clear one device.** With sync on, emptying the list writes a delete marker
+    for every sale, so every other till lost them too. It was a workspace-wide deletion
+    wearing the words "clear history".
+  - **It destroyed the supplier payout figures**, which are worked out from sales - real
+    money owed to real people, recoverable only from a backup.
+  - **Nothing needed it.** The report is already date-ranged - day, month, year or a custom
+    from/to - so a clean figure never required clearing anything.
+
+### Worth knowing
+- **Nothing else changed.** Sales, the report, exports, undo and the payout sheet all behave
+  exactly as before. The only difference is that the button is not there.
+- Undoing a sale still leaves a **gap in the receipt numbers** - undo `S5-0003` and the next
+  sale is `S5-0004`. That is deliberate and is not being changed: a receipt may already be
+  printed and in a customer's hand, and giving its number to a different sale later is worse
+  than a gap. Receipt numbers are per till, so gaps are per till too.
+
+---
+
 ## v1.31.1 - 29 August 2026, 21:35
 
 ### Changed
