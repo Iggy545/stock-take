@@ -439,12 +439,16 @@ function miscReportFigures() {
 
 function payoutFigures() {
   return {
-    ratePct: 1.69, webRatePct: 2.5,
+    ratePct: 1.69, webRatePct: 2.5, commPct: 20,
     rows: [
+      // Kay on the shop's rate and Meg deliberately on none, so the export is
+      // checked with a commissioned supplier AND an exempt one in it.
       { name: 'Kay', units: 2, fromCash: 22.5, fromCard: 0, fromWeb: 0, fromOther: 0,
-        owed: 22.5, cardSales: 0, webSales: 0, refunds: 0, fee: 0, webFee: 0 },
+        sold: 22.5, owed: 18, cardSales: 0, webSales: 0, refunds: 0, fee: 0, webFee: 0,
+        commissionPct: 20, commission: 4.5 },
       { name: 'Meg', units: 1, fromCash: 0, fromCard: 23.59, fromWeb: 0, fromOther: 0,
-        owed: 23.59, cardSales: 24, webSales: 0, refunds: 0, fee: 0.41, webFee: 0 },
+        sold: 24, owed: 23.59, cardSales: 24, webSales: 0, refunds: 0, fee: 0.41, webFee: 0,
+        commissionPct: 0, commission: 0 },
     ],
   };
 }
@@ -528,12 +532,17 @@ function oldReportCsv(f, label, p) {
     csv += '\nMiscellaneous\n' + misc;
   }
   let payouts = `Maker,Items,Pay from cash,Pay from card,Pay from website,Pay from other,Owed,`
-    + `Card sales,Website sales,Refunds,Card fee (${p.ratePct}%),Website fee (${p.webRatePct}%)\n`;
+    // CHANGED DELIBERATELY at v1.34.0: two columns for the shop's own
+    // commission. The payout sheet is what somebody hands real money out from,
+    // so a deduction missing from it would be a hole.
+    + `Card sales,Website sales,Refunds,Card fee (${p.ratePct}%),Website fee (${p.webRatePct}%),`
+    + `Commission %,Shop commission\n`;
   p.rows.forEach(m => {
     payouts += [m.name, m.units, m.fromCash.toFixed(2), m.fromCard.toFixed(2),
       m.fromWeb.toFixed(2), m.fromOther.toFixed(2), m.owed.toFixed(2),
       m.cardSales.toFixed(2), m.webSales.toFixed(2),
-      m.refunds.toFixed(2), m.fee.toFixed(2), m.webFee.toFixed(2)].map(esc).join(',') + '\n';
+      m.refunds.toFixed(2), m.fee.toFixed(2), m.webFee.toFixed(2),
+      m.commissionPct, m.commission.toFixed(2)].map(esc).join(',') + '\n';
   });
   csv += '\nSupplier payouts\n' + payouts;
   return csv;

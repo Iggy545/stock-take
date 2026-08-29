@@ -352,6 +352,17 @@
     padding:2px 9px;font-size:13px;font-weight:700;flex:none;
   }
   .web-banner .sub{font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;}
+  .payout-comm{
+    font-size:12px;color:var(--danger);font-weight:600;
+    padding:4px 0 0;
+  }
+  .mk-comm{
+    display:inline-flex;align-items:center;gap:5px;
+    font-size:11px;color:var(--muted);margin-top:4px;
+  }
+  .mk-comm input{
+    width:62px;margin:0;padding:4px 6px;font-size:12px;text-align:right;
+  }
   .web-badge{
     display:inline-block;font-size:10px;font-weight:700;color:var(--clay-dark);
     border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:5px;
@@ -983,6 +994,8 @@
       <input type="number" id="cardFeeInput" inputmode="decimal" step="0.01" min="0" max="99" placeholder="1.69">
       <label for="webFeeInput" style="margin-top:10px;">Website fee taken off supplier payouts (%)</label>
       <input type="number" id="webFeeInput" inputmode="decimal" step="0.01" min="0" max="99" placeholder="2.50">
+      <label for="shopCommInput" style="margin-top:10px;">Shop commission on all sales (%)</label>
+      <input type="number" id="shopCommInput" inputmode="decimal" step="0.1" min="0" max="99" placeholder="0">
       <button class="btn btn-primary" id="cardFeeSaveBtn" style="margin-top:8px;width:100%;">Save</button>
       <div class="folder-hint" style="margin-top:8px;">
         Suppliers are paid the full sale price on cash, and the sale price less this
@@ -995,6 +1008,14 @@
         website charges its own rate, which is not the same as the reader's — check what
         yours actually is on the SumUp dashboard rather than trusting the <b>2.5%</b>
         this starts at.
+      </div>
+      <div class="folder-hint" style="margin-top:8px;">
+        The shop's own cut, taken off every supplier payout on top of the fees above. It
+        comes off sales <b>after refunds</b> — a card company keeps its fee on a refunded
+        sale, but there is no reason the shop should keep commission on one. Leave it at
+        <b>0</b> and payouts work exactly as they did before.
+        A supplier on different terms can have their own figure against their name under
+        <b>Makers &amp; codes</b>; blank there means this one.
       </div>
       <div class="storage-note" id="cardFeeNote"></div>
     </div>
@@ -4008,9 +4029,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.33.0';
+  const APP_VERSION = '1.34.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '22:00';
+  const BUILD_TIME  = '22:45';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7761,6 +7782,37 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // `only` narrows the table to one maker, for the report's maker view. The
   // arithmetic per maker is unchanged either way: this filters which rows come
   // back, never how one is worked out.
+  /* The shop's own cut. Nothing like the card fee: that is money a third party
+     has already taken, this is money the shop keeps. It comes off sales AFTER
+     refunds, because a refunded sale earned the shop nothing to take a cut of.
+
+     Starts at 0, so adding this feature changed nobody's payout until the shop
+     actually set a figure. */
+  const SHOP_COMM_KEY = 'posShopCommissionPct';
+  function shopCommissionPct(){
+    let v = NaN;
+    try{ v = parseFloat(localStorage.getItem(SHOP_COMM_KEY)); }catch(e){}
+    return (isFinite(v) && v >= 0 && v < 100) ? v : 0;
+  }
+  // A supplier can be on their own terms. Absent, blank or nonsense against
+  // their name falls back to the shop-wide figure, so one setting still covers
+  // everybody unless somebody is deliberately made an exception.
+  //
+  // Matched on the NAME, because that is what a sale line carries -- the letter
+  // only ever reaches an item's code. Names are compared trimmed and
+  // case-insensitively so "kay" and "Kay " are not two different people.
+  function makerCommissionPct(name){
+    const key = String(name||'').trim().toLowerCase();
+    if(!key || key === '—') return shopCommissionPct();
+    const list = (typeof makers !== 'undefined' && Array.isArray(makers)) ? makers : [];
+    let found = null;
+    for(let i=0;i<list.length;i++){
+      if(String(list[i] && list[i].name || '').trim().toLowerCase() === key){ found = list[i]; break; }
+    }
+    const v = found ? parseFloat(found.commission) : NaN;
+    return (isFinite(v) && v >= 0 && v < 100) ? v : shopCommissionPct();
+  }
+
   function makerFigures(fromStr, toStr, only){
     const rate    = cardFeePct() / 100;
     const webRate = webFeePct() / 100;
@@ -7821,18 +7873,29 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       // its own line: it carries a different fee, and seeing which channel the
       // money is coming from is the point of this table.
       m.fromWeb     = round2(m.webSales - m.webRefunds - m.webFee);
-      m.owed        = round2(m.fromCash + m.fromOther + m.fromCard + m.fromWeb);
+      // The shop's cut, off the sale value net of refunds. Taken LAST, on top of
+      // the payment fees, so a supplier bears both: the shop's percentage is a
+      // clean share of the ticket price and does not move with how somebody
+      // chose to pay.
+      m.commissionPct = makerCommissionPct(m.name);
+      m.commission    = round2(m.sold * m.commissionPct / 100);
+      m.owed          = round2(m.fromCash + m.fromOther + m.fromCard + m.fromWeb
+                               - m.commission);
       return m;
     }).filter(m => m.sold !== 0 || m.units !== 0 || m.fee !== 0 || m.webFee !== 0)
       .sort((a,b) => b.owed - a.owed);
-    return { rows: rows, ratePct: cardFeePct(), webRatePct: webFeePct() };
+    return { rows: rows, ratePct: cardFeePct(), webRatePct: webFeePct(),
+             commPct: shopCommissionPct() };
   }
 
   function payoutBodyHtml(fromStr, toStr, only){
     const p = makerFigures(fromStr, toStr, only);
     if(!p.rows.length) return '';
     let h = `<div class="quick-sell-head" style="margin-top:14px;">Supplier payouts</div>`;
-    h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales and ${p.webRatePct}% on website sales. Cash pays in full.</div>`;
+    const anyComm = p.rows.some(m => m.commission);
+    h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales and ${p.webRatePct}% on website sales. Cash pays in full.`
+       + (anyComm ? ` The shop's commission comes off after that; the <b>from</b> figures are the money in, and the commission comes off the total.` : '')
+       + `</div>`;
     p.rows.forEach(m => {
       h += `<div class="payout-row">
         <div class="payout-head"><span>${escapeHtml(m.name)}</span><span>${money(m.owed)}</span></div>
@@ -7842,6 +7905,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           ${m.fromWeb ? `<span>🌐 from website <b>${money(m.fromWeb)}</b></span>` : ''}
           ${m.fromOther ? `<span>✨ from other <b>${money(m.fromOther)}</b></span>` : ''}
         </div>
+        ${m.commission ? `<div class="payout-comm">🏠 less shop commission ${m.commissionPct}% <b>−${money(m.commission)}</b></div>` : ''}
         <div class="payout-detail">
           <span>${m.units} item${m.units===1?'':'s'}</span>
           <span>cash ${money(m.cash)}</span>
@@ -7851,6 +7915,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           ${m.refunds ? `<span>refunds −${money(m.refunds)}</span>` : ''}
           ${m.fee ? `<span>card fee −${money(m.fee)}</span>` : ''}
           ${m.webFee ? `<span>website fee −${money(m.webFee)}</span>` : ''}
+          ${m.commission ? `<span>commission ${m.commissionPct}% of ${money(m.sold)}</span>` : ''}
         </div>
       </div>`;
     });
@@ -7859,6 +7924,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const tCard  = round2(p.rows.reduce((a,m) => a + m.fromCard, 0));
     const tOther = round2(p.rows.reduce((a,m) => a + m.fromOther, 0));
     const tWeb   = round2(p.rows.reduce((a,m) => a + m.fromWeb, 0));
+    const tComm  = round2(p.rows.reduce((a,m) => a + m.commission, 0));
     h += `<div class="payout-row payout-total">
       <div class="payout-head"><span>Total to pay out</span><span>${money(owed)}</span></div>
       <div class="payout-split">
@@ -7867,6 +7933,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         ${tWeb ? `<span>🌐 website, from the bank <b>${money(tWeb)}</b></span>` : ''}
         ${tOther ? `<span>✨ other <b>${money(tOther)}</b></span>` : ''}
       </div>
+      ${tComm ? `<div class="payout-comm">🏠 shop commission kept <b>−${money(tComm)}</b></div>` : ''}
     </div>`;
     return h;
   }
@@ -8214,12 +8281,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         { h:'Maker' }, { h:'Items' }, { h:'Pay from cash' }, { h:'Pay from card' },
         { h:'Pay from website' }, { h:'Pay from other' }, { h:'Owed' },
         { h:'Card sales' }, { h:'Website sales' }, { h:'Refunds' },
-        { h:`Card fee (${p.ratePct}%)` }, { h:`Website fee (${p.webRatePct}%)` }
+        { h:`Card fee (${p.ratePct}%)` }, { h:`Website fee (${p.webRatePct}%)` },
+        // Per row, not in the heading: a supplier can be on their own terms.
+        { h:'Commission %' }, { h:'Shop commission' }
       ],
       rows: p.rows.map(m => [
         m.name, m.units, moneyCell(m.fromCash), moneyCell(m.fromCard), moneyCell(m.fromWeb),
         moneyCell(m.fromOther), moneyCell(m.owed), moneyCell(m.cardSales), moneyCell(m.webSales),
-        moneyCell(m.refunds), moneyCell(m.fee), moneyCell(m.webFee)
+        moneyCell(m.refunds), moneyCell(m.fee), moneyCell(m.webFee),
+        m.commissionPct, moneyCell(m.commission)
       ])
     };
   }
@@ -8445,26 +8515,37 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const web   = document.getElementById('webFeeInput');
     const note  = document.getElementById('cardFeeNote');
     if(!input) return;
+    const comm  = document.getElementById('shopCommInput');
     function show(){
+      const c = shopCommissionPct();
       note.textContent = 'Card sales pay out at ' + (100 - cardFeePct()).toFixed(2)
-        + '% to the supplier, website sales at ' + (100 - webFeePct()).toFixed(2) + '%.';
+        + '% to the supplier, website sales at ' + (100 - webFeePct()).toFixed(2) + '%.'
+        + (c ? ' The shop then keeps ' + c + '% of every sale.' : '');
     }
     input.value = cardFeePct();
     web.value   = webFeePct();
+    comm.value  = shopCommissionPct();
     show();
     document.getElementById('cardFeeSaveBtn').addEventListener('click', () => {
       const v = parseFloat(input.value);
       const w = parseFloat(web.value);
       if(!isFinite(v) || v < 0 || v >= 100){ showToast('Enter a card percentage between 0 and 99', 'error'); return; }
       if(!isFinite(w) || w < 0 || w >= 100){ showToast('Enter a website percentage between 0 and 99', 'error'); return; }
+      // Blank is a real answer here and means none, unlike the two fees above
+      // which always apply at whatever the provider charges.
+      const cRaw = String(comm.value).trim();
+      const c = cRaw === '' ? 0 : parseFloat(cRaw);
+      if(!isFinite(c) || c < 0 || c >= 100){ showToast('Enter a commission between 0 and 99', 'error'); return; }
       try{
         localStorage.setItem(CARD_FEE_KEY, String(v));
         localStorage.setItem(WEB_FEE_KEY, String(w));
+        localStorage.setItem(SHOP_COMM_KEY, String(c));
       }catch(e){ showToast('Could not save on this device', 'error'); return; }
       input.value = cardFeePct();
       web.value   = webFeePct();
+      comm.value  = shopCommissionPct();
       show();
-      showToast('Payout fees saved', 'success');
+      showToast('Payout rates saved', 'success');
     });
   })();
 
@@ -9208,11 +9289,37 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         <div style="flex:1;min-width:0;">
           <div style="font-weight:700;font-size:14px;">${escapeHtml(m.name)}</div>
           <div class="promo-desc">${n} item${n===1?'':'s'} · next code ${escapeHtml(peekNextCode(m.letter))}</div>
+          <label class="mk-comm">commission
+            <input type="number" data-makercomm="${escapeAttr(m.letter)}" inputmode="decimal"
+                   step="0.1" min="0" max="99" placeholder="${shopCommissionPct()}"
+                   value="${m.commission == null || m.commission === '' ? '' : escapeAttr(String(m.commission))}">%
+          </label>
         </div>
         <div class="promo-actions"><button type="button" class="pr-del" data-makerdel="${escapeAttr(m.letter)}">✕</button></div>
       </div>`;
     }).join('')
       : '<div class="empty-state" style="padding:14px;">No makers yet — ✨ Generate has nobody to ask.</div>';
+
+    // Blank means "whatever the shop charges everybody", which is why it is
+    // stored as absent rather than as a zero -- a zero is a deliberate "this
+    // one pays no commission" and must survive the shop-wide figure changing.
+    listEl.querySelectorAll('[data-makercomm]').forEach(inp => inp.addEventListener('change', () => {
+      const m = makerByLetter(inp.dataset.makercomm);
+      if(!m) return;
+      const raw = String(inp.value).trim();
+      if(raw === ''){ delete m.commission; }
+      else {
+        const v = parseFloat(raw);
+        if(!isFinite(v) || v < 0 || v >= 100){
+          showToast('Enter a commission between 0 and 99', 'error');
+          inp.value = m.commission == null ? '' : m.commission;
+          return;
+        }
+        m.commission = v;
+      }
+      saveMakers(); syncMakers(); renderMakerUi();
+      showToast(m.name + (raw === '' ? ' — back to the shop rate' : ' — ' + m.commission + '%'), 'success');
+    }));
 
     listEl.querySelectorAll('[data-makerdel]').forEach(b => b.addEventListener('click', () => {
       const m = makerByLetter(b.dataset.makerdel);

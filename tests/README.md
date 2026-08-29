@@ -19,6 +19,7 @@ node tests/variant-names.js index.html
 node tests/photo-keys.js index.html
 node tests/misc-amount.js index.html
 node tests/web-sold-alert.js index.html
+node tests/payouts.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -37,6 +38,7 @@ Each prints a pass/fail line per check and exits non-zero on failure.
 | `photo-keys.js` | The photo KEY the website reads instead of the photograph: the fingerprint three languages have to agree about, and that a key is never cleared just because its photo has not come back out of IndexedDB yet | v1.24.0 |
 | `misc-amount.js` | A manual amount charged for something that was never stock: what the basket will accept, that a set price cannot reach it, that ringing it up moves no stock even when an item is coded `MISC`, and that the report has it in the takings but not in items sold or the supplier payouts | v1.27.0 |
 | `web-sold-alert.js` | The flash that sends somebody to the shelves when a web sale arrives from another till: what raises one and what must never, the recency window that stops a reconnect replaying the shop's whole history, and being told the same order twice. From v1.31.0 also the single-till path — a web order rung through here going onto the same list, and not landing twice when it comes back round over sync | v1.30.0, single till v1.31.0 |
+| `payouts.js` | The supplier payout maths, which somebody hands real money out from: the shop's own commission on top of the card and website fees, that it follows refunds down while the card fee deliberately does not, a supplier on their own terms (a zero meaning zero, not "use the shop rate"), and every part shown on the report adding up to the total | v1.34.0 |
 | `variant-names.js` | The em dash that groups an item's colours into one card on the website: that the till splits a name exactly the way `shop-site/shop.js` does, that a hyphen is never silently promoted to a group, and that a name survives the round trip | v1.23.0 |
 
 ## If a test stops finding the code

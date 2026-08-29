@@ -9,6 +9,40 @@ fixes.
 
 ---
 
+## v1.34.0 - 29 August 2026, 22:45
+
+### Added
+- **The shop can now take its own percentage of every sale.** Settings -> Supplier payouts,
+  **Shop commission on all sales (%)**. It comes off each supplier payout on top of the card
+  and website fees, and every part of the sum is shown on the report as usual.
+- **A supplier can be on their own terms.** Each maker under **Makers & codes** has a
+  commission box. Leave it blank and they are on the shop-wide figure; put **0** in it and
+  they pay none, whatever the shop rate later becomes. The figure travels between devices
+  with the rest of the maker list.
+- The report and the payout sheet name the rate they used, per maker, so a supplier can see
+  where their number came from. Two new columns in the CSV and spreadsheet exports:
+  **Commission %** and **Shop commission**.
+
+### Worth knowing
+- **It starts at 0, so nothing changed until you set a figure.** Payouts up to now are
+  exactly as they were.
+- **The supplier bears both**, which is what was agreed. On a £100 card sale at 20%:
+  card fee −£1.69, commission −£20.00, **supplier is paid £78.31** and the shop keeps a
+  clean £20.00 whichever way the customer paid.
+- **Commission follows refunds down; the card fee deliberately does not.** A card company
+  keeps its fee on a refunded sale, so the shop has really paid it - but there is no reason
+  the shop should keep a cut of a sale it handed back. A sale refunded in full leaves no
+  payout line at all.
+- A misc amount - a reading, a deposit - has no supplier behind it, so it never reaches the
+  payout table and no commission is taken on it.
+- On the report, the **from cash / from card / from website** figures are the money that came
+  in; the commission comes off the total underneath them. The total line also shows what the
+  shop kept.
+- New tests: `tests/payouts.js`, 33 checks, each shown to fail against a deliberately broken
+  copy. The export test's reference was updated on purpose for the two new columns.
+
+---
+
 ## v1.33.0 - 29 August 2026, 22:00
 
 ### Changed
