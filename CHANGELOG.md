@@ -9,6 +9,34 @@ fixes.
 
 ---
 
+## v1.31.0 - 29 August 2026, 21:20
+
+### Added
+- **The reminder now works with only one till open.** Ring a web order through and the item
+  goes straight onto the "sold on the website" list on that same device, so the banner is
+  there until somebody has been and taken it off the shelf. Before this, the list was only
+  raised by a sale arriving from a *second* till, which does nothing on a shop running one
+  iPad.
+
+### Worth knowing
+- **No sound and no pop-up for a sale rung through here** - only the banner. Interrupting
+  the person who pressed the button a second ago tells them nothing, and teaches them to
+  dismiss the box without reading it, which is the opposite of what is wanted on the days a
+  second till *is* open. The flash is still there for a sale arriving from another device.
+- It is the **same list, same Got it - off the floor, same storage**, so an order cannot
+  appear twice however it arrives - rung through here and then echoed back over sync is
+  still one job.
+- Misc amounts are left off, as before. An order that is *only* a misc amount - a reading,
+  a deposit - raises nothing at all, because there is nothing on a shelf to fetch.
+
+### Worth knowing about the till already
+- Selling the same one-off item twice was **already** prevented: adding an item with
+  nothing left gives *"- no stock left to sell"* and refuses it. What this banner adds is
+  getting the thing physically off the floor and packed - and the case the stock count
+  cannot catch, where you hold more than one and only one of them sold.
+
+---
+
 ## v1.30.0 - 29 August 2026, 20:30
 
 ### Added

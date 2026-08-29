@@ -32,6 +32,7 @@ function build(stored) {
   vm.runInContext(
     SRC + '\nthis.planWebSoldAlerts = planWebSoldAlerts;'
         + '\nthis.webSoldKnown = webSoldKnown;'
+        + '\nthis.noteOwnWebSale = noteOwnWebSale;'
         + '\nthis.saveWebSold = saveWebSold;'
         + '\nthis.webSold = webSold;'
         + '\nthis.WINDOW = WEB_SOLD_WINDOW_MS;',
@@ -205,6 +206,79 @@ console.log('\nWhat survives a reload');
   const back = JSON.parse(ctx.store['posWebSoldPending']);
   check('saving writes it where the next load will find it',
     back.pending.length === 1 && back.pending[0].txn === 'T5');
+}
+
+console.log('\nRung through on this till, with no second till to tell');
+// The single-iPad case. Same job list, but raised by the sale itself rather
+// than by a document arriving, and banner-only -- so what is checked here is
+// what lands on the list, not what interrupts anybody.
+function cartLine(over) {
+  return Object.assign({ barcode: 'KA-003', name: 'Rose Quartz Angel',
+    maker: 'Kay', price: 12.5, qty: 1, misc: false }, over || {});
+}
+{
+  const ctx = build();
+  const job = ctx.noteOwnWebSale('T20', 'VQ-0200', '3001',
+    [cartLine(), cartLine({ barcode: 'HG-014', name: 'Selenite Wand', qty: 2 })], justNow);
+  check('ringing a web order through here puts it on the list', !!job);
+  check('it is one job for the whole basket', job.lines.length === 2);
+  check('the code is carried', job.lines[0].barcode === 'KA-003');
+  check('the name is carried', job.lines[0].name === 'Rose Quartz Angel');
+  check('the maker is carried', job.lines[0].maker === 'Kay');
+  check('a quantity above one survives', job.lines[1].qty === 2);
+  check('the order number is carried', job.webRef === '3001');
+  check('the receipt number is carried', job.receiptNo === 'VQ-0200');
+  check('it is now waiting on the banner', ctx.webSold.pending.length === 1);
+  check('and it is written where a reload will find it',
+    JSON.parse(ctx.store['posWebSoldPending']).pending.length === 1);
+}
+{
+  // A reading or a deposit was never on a shelf to be fetched off one.
+  const ctx = build();
+  const job = ctx.noteOwnWebSale('T21', 'VQ-0201', null,
+    [cartLine(), cartLine({ barcode: 'MISC', name: 'Tarot reading', misc: true })], justNow);
+  check('a misc line is left off the job', job.lines.length === 1);
+  check('and it is the real item that stays', job.lines[0].barcode === 'KA-003');
+}
+{
+  const ctx = build();
+  const job = ctx.noteOwnWebSale('T22', 'VQ-0202', null,
+    [cartLine({ barcode: 'MISC', name: 'Deposit', misc: true })], justNow);
+  check('an order that is only a misc amount raises nothing', job === null);
+  check('and nothing is left waiting', ctx.webSold.pending.length === 0);
+}
+{
+  const ctx = build();
+  check('a line with no code is left out',
+    ctx.noteOwnWebSale('T23', null, null, [cartLine({ barcode: '' })], justNow) === null);
+  check('no lines at all raises nothing',
+    ctx.noteOwnWebSale('T24', null, null, [], justNow) === null);
+  check('no transaction raises nothing',
+    ctx.noteOwnWebSale('', null, null, [cartLine()], justNow) === null);
+}
+{
+  const ctx = build();
+  ctx.noteOwnWebSale('T25', null, null, [cartLine()], justNow);
+  const again = ctx.noteOwnWebSale('T25', null, null, [cartLine()], justNow);
+  check('the same order cannot be raised twice', again === null);
+  check('and it is still one job, not two', ctx.webSold.pending.length === 1);
+}
+{
+  const ctx = build({ pending: [], done: { T26: Date.now() } });
+  check('an order already ticked off is not raised again',
+    ctx.noteOwnWebSale('T26', null, null, [cartLine()], justNow) === null);
+}
+{
+  // The one that matters when a second till IS open: this till raises the job
+  // as it rings the sale, then the same sale comes back round over sync. It
+  // must not land a second time.
+  const ctx = build();
+  ctx.noteOwnWebSale('T27', 'VQ-0207', null, [cartLine()], justNow);
+  const echoed = ctx.planWebSoldAlerts(
+    [{ sale: line({ txn: 'T27' }), by: THEM, deleted: false }],
+    { mine: MINE, now: now, known: ctx.webSoldKnown() }
+  );
+  check('the same order arriving over sync afterwards is ignored', echoed.length === 0);
 }
 
 console.log('\nWhen sync has not told us who we are');

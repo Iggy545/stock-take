@@ -3978,9 +3978,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.30.0';
+  const APP_VERSION = '1.31.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '20:30';
+  const BUILD_TIME  = '21:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4701,6 +4701,35 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
                        maker: s.maker || '', qty: Number(s.qty) || 0 });
     });
     return order.map(t => byTxn[t]);
+  }
+
+  // Raised by the till itself when a web order is rung through HERE. Everything
+  // above is for the other devices; this is for the one that rang it, where the
+  // job is not "somebody has sold this" but "you have not been and got it yet".
+  //
+  // So: no sound and no modal. Interrupting the person who pressed the button a
+  // second ago tells them nothing, and teaches them to dismiss the box without
+  // reading it - exactly the habit not to have on the days a second till IS
+  // open. Only the banner, which stays until the thing is in hand.
+  //
+  // Same job list, same tick-off, same storage as the sync path, so an order
+  // cannot be raised twice on this device however it arrives.
+  function noteOwnWebSale(txn, receiptNo, webRef, lines, at){
+    // Misc amounts were never on a shelf, so there is nothing to go and fetch.
+    const picked = (lines || [])
+      .filter(l => l && !l.misc && l.barcode)
+      .map(l => ({ barcode: l.barcode, name: l.name || '', maker: l.maker || '',
+                   qty: Number(l.qty) || 0 }));
+    if(!picked.length) return null;
+    const key = String(txn || '');
+    if(!key || webSoldKnown()[key]) return null;
+    const job = { txn: key, receiptNo: receiptNo || null, webRef: webRef || null,
+                  at: at || new Date().toISOString(), lines: picked };
+    webSold.pending.push(job);
+    saveWebSold();
+    // Guarded because this half is testable without a page around it.
+    if(typeof renderWebSoldBanner === 'function') renderWebSoldBanner();
+    return job;
   }
 
   // Called by the sync layer with whatever a snapshot just delivered.
@@ -7178,6 +7207,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         at: at
       });
     });
+
+    // A web order rung through here takes the stock down but leaves the thing
+    // itself out on the shelf. The banner is the reminder to go and get it --
+    // see "Sold on the website". Before the basket is emptied, because this
+    // reads its lines.
+    if(pay === 'web') noteOwnWebSale(txnId, receiptNo, webRef, cart.lines, at);
 
     cart = { lines: [], disc: null, promo: null };
     saveCart();
