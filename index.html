@@ -131,6 +131,21 @@
   .folder-pick.more{
     background:transparent;border-style:dashed;color:var(--muted);font-weight:600;
   }
+  /* The folded-away list: says which folder it is in now, and opens the list.
+     A button, not the folder box itself — tapping the box on a tablet throws
+     the keyboard up over the folders you came to look at. */
+  .folder-toggle{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    width:100%;margin:8px 0 4px;
+    font-family:inherit;font-size:13px;font-weight:600;color:var(--ink);
+    text-align:left;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:11px 13px;
+    cursor:pointer;
+  }
+  .folder-toggle:active{background:var(--line);}
+  .folder-toggle .ft-now{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .folder-toggle .ft-now.none{color:var(--muted);}
+  .folder-toggle .ft-do{flex:none;color:var(--moss-dark);}
 
   /* Promo codes */
   .promo-row{
@@ -773,7 +788,8 @@
       <div class="folder-hint" id="addVariantHint" style="margin-top:0;"></div>
       <label>Folder (optional)</label>
       <input type="text" id="manualFolder" list="folderOptions" placeholder="e.g. Bracelets or Bracelets/Beaded" autocomplete="off">
-      <div class="folder-picks" id="addFolderPicks"></div>
+      <button type="button" class="folder-toggle" id="addFolderToggle" style="display:none;"></button>
+      <div class="folder-picks" id="addFolderPicks" style="display:none;"></div>
       <div class="folder-hint" id="addFolderPicksHint" style="margin-top:0;"></div>
       <div class="folder-hint">Groups this item with others — e.g. all bracelets in <b>Bracelets</b>. Use / to make a subfolder inside a folder.</div>
       <label>Starting quantity</label>
@@ -1059,7 +1075,8 @@
     <div class="folder-hint" id="newVariantHint" style="margin-top:0;"></div>
     <label>Folder (optional)</label>
     <input type="text" id="newItemFolder" list="folderOptions" placeholder="e.g. Bracelets" autocomplete="off">
-    <div class="folder-picks" id="newFolderPicks"></div>
+    <button type="button" class="folder-toggle" id="newFolderToggle" style="display:none;"></button>
+    <div class="folder-picks" id="newFolderPicks" style="display:none;"></div>
     <div class="folder-hint" id="newFolderPicksHint" style="margin-top:0;"></div>
     <label>Starting quantity</label>
     <input type="number" id="newItemQty" placeholder="0" inputmode="numeric">
@@ -1279,7 +1296,8 @@
     <div class="folder-hint" id="editVariantHint" style="margin-top:0;"></div>
     <label>Folder</label>
     <input type="text" id="editItemFolder" list="folderOptions" placeholder="None — or e.g. Bracelets/Beaded" autocomplete="off">
-    <div class="folder-picks" id="editFolderPicks"></div>
+    <button type="button" class="folder-toggle" id="editFolderToggle" style="display:none;"></button>
+    <div class="folder-picks" id="editFolderPicks" style="display:none;"></div>
     <div class="folder-hint" id="editFolderPicksHint" style="margin-top:0;">Tap a folder you already use, or type a new one. Use / to make a subfolder.</div>
     <label>Starting quantity</label>
     <input type="number" id="editItemQty" inputmode="numeric">
@@ -3840,9 +3858,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.24.0';
+  const APP_VERSION = '1.25.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '10:33';
+  const BUILD_TIME  = '11:28';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4848,14 +4866,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // three get the same picker, so a folder is chosen the same way wherever you
   // are, and the wording only has to be got right once.
   const FOLDER_PICKERS = {
-    edit: { input:'editItemFolder', box:'editFolderPicks', hint:'editFolderPicksHint', maker:'editItemMaker' },
-    add:  { input:'manualFolder',   box:'addFolderPicks',  hint:'addFolderPicksHint',  maker:'manualMaker'   },
-    scan: { input:'newItemFolder',  box:'newFolderPicks',  hint:'newFolderPicksHint',  maker:'newItemMaker'  }
+    edit: { input:'editItemFolder', box:'editFolderPicks', hint:'editFolderPicksHint', maker:'editItemMaker', toggle:'editFolderToggle' },
+    add:  { input:'manualFolder',   box:'addFolderPicks',  hint:'addFolderPicksHint',  maker:'manualMaker',   toggle:'addFolderToggle'  },
+    scan: { input:'newItemFolder',  box:'newFolderPicks',  hint:'newFolderPicksHint',  maker:'newItemMaker',  toggle:'newFolderToggle'  }
   };
 
   // Which pickers have been asked for the whole list rather than one maker's.
   // Cleared when a form opens, so the next item starts from the maker again.
   const folderPicksShowAll = {};
+
+  // Which pickers are open. Closed is the resting state: three dozen folders
+  // is a wall of buttons to scroll past on the way to the price, and most
+  // items are filed by tapping one and never looking again. Closed still says
+  // which folder the item is in — that much is worth seeing without asking.
+  const folderPicksOpen = {};
 
   // The folders a given person's items are already in, parent folders included.
   // null means "do not narrow": either nobody is named, or that name has no
@@ -4885,17 +4909,34 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const box = document.getElementById(cfg.box);
     const hint = document.getElementById(cfg.hint);
     const input = document.getElementById(cfg.input);
+    const toggle = cfg.toggle ? document.getElementById(cfg.toggle) : null;
     if(!box || !input) return;
 
     const all = allFolderPaths();
     if(!all.length){
       box.innerHTML = '';
       box.style.display = 'none';
+      if(toggle) toggle.style.display = 'none';
       if(hint) hint.textContent = 'No folders yet — type one here to make the first, e.g. Bracelets.';
       return;
     }
-    box.style.display = 'flex';
     const current = normFolder(input.value);
+    const open = !!folderPicksOpen[which];
+
+    // Folded away, the button is the answer to "where is this one filed?" —
+    // the folder, its count when it is a folder that exists, and the way in.
+    if(toggle){
+      toggle.style.display = 'flex';
+      const known = current && all.indexOf(current) !== -1;
+      const now = current
+        ? `📁 ${escapeHtml(current)}${known ? ` <span style="opacity:.7;">${folderItemCount(current)}</span>` : ' <span style="opacity:.7;">new</span>'}`
+        : 'No folder';
+      toggle.innerHTML =
+        `<span class="ft-now${current ? '' : ' none'}">${now}</span>` +
+        `<span class="ft-do">${open ? 'Done ▴' : 'Choose folder ▾'}</span>`;
+    }
+
+    box.style.display = open ? 'flex' : 'none';
 
     // With a maker named, offer that person's folders first. In a shop where
     // the folders are largely one per person this is the whole list they want
@@ -4939,9 +4980,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     box.innerHTML = html;
 
     if(hint){
-      hint.textContent = mine
-        ? `Folders ${maker} already uses. Tap one, type a new one, or show them all.`
-        : 'Tap a folder you already use, or type a new one. Use / to make a subfolder.';
+      hint.textContent = !open ? ''
+        : mine
+          ? `Folders ${maker} already uses. Tap one, type a new one, or show them all.`
+          : 'Tap a folder you already use, or type a new one. Use / to make a subfolder.';
     }
   }
 
@@ -4954,7 +4996,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const box = document.getElementById(cfg.box);
     const input = document.getElementById(cfg.input);
     const makerEl = cfg.maker ? document.getElementById(cfg.maker) : null;
+    const toggle = cfg.toggle ? document.getElementById(cfg.toggle) : null;
     if(!box || !input) return;
+    if(toggle) toggle.addEventListener('click', () => {
+      folderPicksOpen[which] = !folderPicksOpen[which];
+      renderFolderPicks(which);
+      // Opening it near the bottom of a long form otherwise puts the folders
+      // off the end of the screen, under the thumb that just asked for them.
+      if(folderPicksOpen[which]){
+        try { box.scrollIntoView({ block:'nearest' }); } catch(err){}
+      }
+    });
     box.addEventListener('click', (e) => {
       const pick = e.target.closest('.folder-pick');
       if(!pick) return;
@@ -4964,6 +5016,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         return;
       }
       input.value = pick.getAttribute('data-folder') || '';
+      // Chosen — fold it back up. The button now reads as the answer, and the
+      // rest of the form is where it was before the list pushed it down.
+      folderPicksOpen[which] = false;
       renderFolderPicks(which);
     });
     input.addEventListener('input', () => renderFolderPicks(which, true));
@@ -5062,6 +5117,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // A form is opening: back to that maker's folders, and redraw from scratch.
   function resetFolderPicks(which){
     delete folderPicksShowAll[which];
+    delete folderPicksOpen[which];
     refreshFolderOptions();
     renderFolderPicks(which);
     renderVariantPicks(which);

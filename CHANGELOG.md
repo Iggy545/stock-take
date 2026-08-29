@@ -9,6 +9,22 @@ fixes.
 
 ---
 
+## v1.25.0 - 29 August 2026, 11:28
+
+### Changed
+- **The list of folders is folded away until you ask for it.** On the Add tab, the New item
+  box and Edit item, the folder buttons used to sit open under the Folder box - three dozen
+  of them, a wall to scroll past on the way to the quantity and the price. There is now a
+  single line there instead, saying **which folder the item is in**, with **Choose folder**
+  on the right. Tap that and the same list of buttons opens exactly as before; tap one and
+  it folds back up showing what you picked.
+- Nothing about picking a folder has changed - the maker's own folders are still offered
+  first, *Show all* still widens it to the whole shop, and typing still works. It is a
+  button rather than tapping into the Folder box on purpose: tapping the box throws the
+  on-screen keyboard up over the folders you came to look at.
+
+---
+
 ## v1.24.0 - 29 August 2026, 10:33
 
 ### Changed
