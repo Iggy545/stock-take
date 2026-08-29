@@ -9,6 +9,41 @@ fixes.
 
 ---
 
+## v1.33.0 - 29 August 2026, 22:00
+
+### Changed
+- **The 🌐 Web button is off the Take payment screen.** A till operator taking a counter
+  sale had no reason to ever pick it, and picking it by mistake did three things at once:
+  booked the money to the wrong channel, paid the supplier at the website fee rate (2.5%)
+  instead of the reader's (1.69%), and put the item on the "still on the shop floor" list
+  after the customer had walked out with it. Take payment now offers Cash, Card and Other.
+- **A website order is rung through from Sales → 🌐 Record a website order.** Put the items
+  in the basket on the Till tab as usual, then record it there. Same basket, same stock
+  movement, same receipt - only the way in has changed. It opens as **Website order** with
+  no payment methods on it at all, so nothing can be switched halfway through.
+
+### Added
+- **The sales report can be narrowed to one maker.** A **Maker** picker under the dates:
+  *All makers* as it has always been, or any one supplier. Everything on the panel follows -
+  takings, sales, items, average, the cash / card / website split, discounts, refunds, top
+  sellers and the payout section - and **Print** prints whatever is on the screen.
+- The picker is built from whoever actually sold something in the chosen period, so it never
+  offers a name with nothing behind it, and it hides itself when there is only one maker. Move
+  the dates to a period a maker had no sales in and it falls back to *All makers* rather than
+  leaving you looking at an empty report.
+
+### Worth knowing
+- **The CSV and spreadsheet exports are unchanged** and still cover the whole shop. The maker
+  view is for reading on the screen; the supplier payout section in the export already breaks
+  the figures down per maker. The tests that check those files byte for byte still pass.
+- With a maker selected, **Sales** and **Avg sale** count whole sales that included something
+  of theirs - a basket can hold more than one maker's things - while takings, items and
+  discounts are theirs alone. The panel says so on screen rather than leaving it to be assumed.
+- **— no maker** is a real choice in the list. It is where a misc amount lands, since a reading
+  or a deposit has no supplier behind it.
+
+---
+
 ## v1.32.0 - 29 August 2026, 21:45
 
 ### Removed

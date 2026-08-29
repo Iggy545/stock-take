@@ -545,6 +545,8 @@
   .cart-totals .t-row.grand{font-size:18px;font-weight:800;color:var(--ink);padding-top:6px;}
   .charge-btn{background:var(--moss);color:#fff;font-size:17px;padding:15px;}
   .pay-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;}
+  /* An odd number of methods would leave the last one stranded in half a row. */
+  .pay-methods button:last-child:nth-child(odd){grid-column:1/-1;}
   .pay-method{flex:1;padding:14px 8px;text-align:center;border-radius:12px;border:2px solid var(--line);background:var(--panel);font-size:14px;font-weight:700;cursor:pointer;color:var(--muted);}
   .pay-method.sel{border-color:var(--moss);color:var(--moss-dark);background:rgba(91,123,98,0.08);}
   .change-due{text-align:center;font-size:15px;padding:10px;border-radius:10px;background:var(--line);margin-bottom:10px;font-weight:600;}
@@ -932,6 +934,12 @@
       </div>
       <div id="txnList"></div>
     </div>
+
+    <!-- Ringing a website order through lives HERE, off the payment screen, so
+         that taking a counter sale can never land on it by accident. Same
+         basket, same stock movement, same receipt - only the way in differs. -->
+    <button class="btn btn-secondary" id="webOrderBtn" style="margin-top:8px;width:100%;">🌐 Record a website order</button>
+    <div class="folder-hint" style="margin:6px 2px 0;">Put the items in the basket on the Till tab first, then record it here. Stock comes off exactly as it does at the counter, and the money is recorded as arriving through the website.</div>
 
     <div class="btn-row" style="margin-top:8px;">
       <button class="btn btn-secondary" id="exportSalesBtn">⤓ Export sales</button>
@@ -1517,14 +1525,19 @@
 <!-- Take payment -->
 <div class="modal-overlay" id="payModal" style="display:none;">
   <div class="modal">
-    <h2>Take payment</h2>
+    <h2 id="payTitle">Take payment</h2>
     <div class="cart-totals" style="border-top:none;padding-top:0;">
       <div class="t-row grand"><span>Total due</span><span id="payTotal">£0.00</span></div>
     </div>
-    <div class="pay-methods">
+    <!-- 🌐 Web is deliberately NOT one of these. A till operator taking a
+         counter sale never has a reason to pick it, and picking it by mistake
+         books the money to the wrong channel, pays the supplier at the website
+         fee rate instead of the reader's, and puts the item on the "still on
+         the shop floor" list after the customer has walked out with it. A
+         website order is rung through from the Sales tab instead. -->
+    <div class="pay-methods" id="payMethods">
       <button class="pay-method sel" data-pay="cash" type="button">💵 Cash</button>
       <button class="pay-method" data-pay="card" type="button">💳 Card</button>
-      <button class="pay-method" data-pay="web" type="button">🌐 Web</button>
       <button class="pay-method" data-pay="other" type="button">✨ Other</button>
     </div>
     <div id="cashSection">
@@ -1637,6 +1650,13 @@
       <input type="date" id="zFrom">
       <label>To</label>
       <input type="date" id="zTo">
+    </div>
+    <!-- Narrow the whole report to one maker. Rebuilt from whoever actually
+         sold something in the chosen period, so it never offers a name with
+         nothing behind it, and hidden altogether when there is only one. -->
+    <div id="zMakerWrap" style="display:none;">
+      <label for="zMakerSel">Maker</label>
+      <select id="zMakerSel"></select>
     </div>
     <div id="zBody"></div>
     <div class="btn-row" style="margin-top:10px;">
@@ -3988,9 +4008,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.32.0';
+  const APP_VERSION = '1.33.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '21:45';
+  const BUILD_TIME  = '22:00';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -6855,8 +6875,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
   // ---- Payment ----
   let payMethod = 'cash';
-  function openPay(){
-    if(cart.lines.length===0){ showToast('Basket is empty', 'error'); return; }
+  // opts.web opens this as a website order rather than a counter sale. There is
+  // no Web button on the screen any more, so this is the only way to reach it.
+  function openPay(opts){
+    const asWeb = !!(opts && opts.web);
+    if(cart.lines.length===0){
+      showToast(asWeb ? 'Basket is empty — put the items in on the Till tab first'
+                      : 'Basket is empty', 'error');
+      return;
+    }
     // Stock can change under the basket (another device, an edit) — re-check now
     let adjusted = false;
     cart.lines.forEach(l => {
@@ -6873,7 +6900,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     const f = cartFigures();
     document.getElementById('payTotal').textContent = money(f.total);
-    payMethod = 'cash';
+    payMethod = asWeb ? 'web' : 'cash';
+    // A website order is not a choice of payment method - it was paid for
+    // somewhere else before it ever reached the till. Showing cash/card/other
+    // here would only invite somebody to change it halfway through.
+    document.getElementById('payMethods').style.display = asWeb ? 'none' : 'grid';
+    document.getElementById('payTitle').textContent = asWeb ? '🌐 Website order' : 'Take payment';
     refreshPayMethods();
     document.getElementById('tenderInput').value = '';
     document.getElementById('webRefInput').value = '';
@@ -6931,7 +6963,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('payCancel').addEventListener('click', () => {
     document.getElementById('payModal').style.display='none';
   });
-  document.getElementById('chargeBtn').addEventListener('click', openPay);
+  document.getElementById('chargeBtn').addEventListener('click', () => openPay());
+  document.getElementById('webOrderBtn').addEventListener('click', () => openPay({ web:true }));
 
   /* ---- Card reader (SumUp Solo, via the payment service) ------------------
      The till never talks to SumUp directly — the API key can't live in this
@@ -7627,7 +7660,29 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     d = d || new Date();
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
-  function zFigures(fromStr, toStr){
+  // Every sale line's maker, normalised the one way, so the picker, the filter
+  // and the payout table cannot disagree about who somebody is. A blank maker
+  // is a real bucket, not a missing one -- it is what a misc amount has.
+  function makerKeyOf(s){ return String((s && s.maker) || '').trim() || '—'; }
+
+  // Which makers actually sold something in a period. Built from the sales
+  // rather than the makers list, so the picker never offers a name with nothing
+  // behind it in the chosen dates.
+  function makersInRange(fromStr, toStr){
+    const seen = {};
+    sales.forEach(s => {
+      const ld = localDateStr(new Date(s.at));
+      if(ld < fromStr || ld > toStr) return;
+      seen[makerKeyOf(s)] = 1;
+    });
+    // The no-maker bucket last: it is a leftover, not a supplier.
+    return Object.keys(seen).sort((a,b) =>
+      a === '—' ? 1 : b === '—' ? -1 : a.localeCompare(b));
+  }
+
+  // `maker` narrows the whole report to one supplier. Left out, everything
+  // behaves exactly as it always did -- which is what the exports rely on.
+  function zFigures(fromStr, toStr, maker){
     const f = { gross:0, discounts:0, refunds:0, net:0, txns:0, units:0,
                 misc:0, miscLines:[],
                 pay:{cash:0, card:0, web:0, other:0}, sellers:{} };
@@ -7635,6 +7690,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     sales.forEach(s => {
       const ld = localDateStr(new Date(s.at));
       if(ld < fromStr || ld > toStr) return;
+      if(maker && makerKeyOf(s) !== maker) return;
       const q = lineQty(s), net = lineNet(s);
       if(s.kind==='refund' || net < 0 || q < 0){
         f.refunds += -net;
@@ -7702,7 +7758,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return (isFinite(v) && v >= 0 && v < 100) ? v : 2.5;   // SumUp online; set it in Settings
   }
 
-  function makerFigures(fromStr, toStr){
+  // `only` narrows the table to one maker, for the report's maker view. The
+  // arithmetic per maker is unchanged either way: this filters which rows come
+  // back, never how one is worked out.
+  function makerFigures(fromStr, toStr, only){
     const rate    = cardFeePct() / 100;
     const webRate = webFeePct() / 100;
     const makers = {};
@@ -7721,6 +7780,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       // the no-maker bucket and inflate "Total to pay out" - a figure somebody
       // acts on with real money. It is reported on its own instead.
       if(s.misc) return;
+      if(only && makerKeyOf(s) !== only) return;
       const m = bucket(s.maker);
       const net = lineNet(s), q = lineQty(s);
       const pay = (s.pay==='cash' || s.pay==='card' || s.pay==='web') ? s.pay : 'other';
@@ -7768,8 +7828,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return { rows: rows, ratePct: cardFeePct(), webRatePct: webFeePct() };
   }
 
-  function payoutBodyHtml(fromStr, toStr){
-    const p = makerFigures(fromStr, toStr);
+  function payoutBodyHtml(fromStr, toStr, only){
+    const p = makerFigures(fromStr, toStr, only);
     if(!p.rows.length) return '';
     let h = `<div class="quick-sell-head" style="margin-top:14px;">Supplier payouts</div>`;
     h += `<div class="folder-hint" style="margin-bottom:6px;">Full sale price, less ${p.ratePct}% on card sales and ${p.webRatePct}% on website sales. Cash pays in full.</div>`;
@@ -8206,8 +8266,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   /* =================== end spreadsheet export =================== */
 
-  function zBodyHtml(fromStr, toStr){
-    const f = zFigures(fromStr, toStr);
+  function zBodyHtml(fromStr, toStr, maker){
+    const f = zFigures(fromStr, toStr, maker);
     const top = Object.keys(f.sellers).map(k => f.sellers[k]).sort((a,b) => b.net-a.net).slice(0,5);
     let h = `<div class="report-grid">
       <div class="report-cell"><div class="rc-label">Net takings</div><div class="rc-value">${money(f.net)}</div></div>
@@ -8219,6 +8279,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       <div class="report-cell"><div class="rc-label">Discounts given</div><div class="rc-value">−${money(f.discounts)}</div></div>
       <div class="report-cell"><div class="rc-label">Refunds</div><div class="rc-value">−${money(f.refunds)}</div></div>
     </div>`;
+    if(maker){
+      // Said plainly rather than left to be assumed: a sale is one basket, and
+      // a basket can hold other makers' things too. The takings above are this
+      // maker's share of it, but the count and the average are of whole sales
+      // that had something of theirs in them.
+      h += `<div class="folder-hint" style="margin:-4px 0 10px;">Showing <b>${escapeHtml(maker)}</b> only. `
+         + `Takings, items and discounts are theirs alone; <b>Sales</b> and <b>Avg sale</b> count whole sales that included something of theirs.</div>`;
+    }
     if(f.pay.web){
       h += `<div class="report-cell" style="margin-bottom:8px;"><div class="rc-label">🌐 Website</div><div class="rc-value">${money(f.pay.web)}</div></div>`;
     }
@@ -8243,13 +8311,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 2px;"><span>${escapeHtml(m.name)}${m.kind==='refund'?' (refund)':''}</span><span>${amt}</span></div>`;
       }).join('');
     }
-    h += payoutBodyHtml(fromStr, toStr);
+    h += payoutBodyHtml(fromStr, toStr, maker);
     if(f.txns===0 && f.refunds===0){
-      h += `<div class="empty-state">No sales in this period.</div>`;
+      h += `<div class="empty-state">${maker ? 'Nothing of ' + escapeHtml(maker) + '\'s sold in this period.'
+                                            : 'No sales in this period.'}</div>`;
     }
     return h;
   }
   let zMode = 'day';
+  let zMaker = '';        // '' is every maker, which is how the report opens
   function zCurrentRange(){
     const today = localDateStr();
     if(zMode === 'day'){
@@ -8272,6 +8342,21 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(a > b){ const t = a; a = b; b = t; }
     return { from: a, to: b, label: a + ' to ' + b };
   }
+  // The picker is rebuilt on every refresh because changing the dates changes
+  // who sold anything. A maker that drops out of the new period falls back to
+  // every maker rather than silently showing an empty report.
+  function refreshZMakers(from, to){
+    const names = makersInRange(from, to);
+    const wrap = document.getElementById('zMakerWrap');
+    const sel  = document.getElementById('zMakerSel');
+    // One maker (or none) is not a choice worth making.
+    if(names.length < 2){ zMaker = ''; wrap.style.display = 'none'; return; }
+    if(zMaker && names.indexOf(zMaker) < 0) zMaker = '';
+    sel.innerHTML = '<option value="">All makers</option>'
+      + names.map(n => `<option value="${escapeAttr(n)}">${escapeHtml(n === '—' ? '— no maker' : n)}</option>`).join('');
+    sel.value = zMaker;
+    wrap.style.display = 'block';
+  }
   function refreshZ(){
     document.getElementById('zDayWrap').style.display    = zMode==='day'    ? 'block' : 'none';
     document.getElementById('zMonthWrap').style.display  = zMode==='month'  ? 'block' : 'none';
@@ -8280,8 +8365,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.querySelectorAll('#zRangeType button').forEach(b =>
       b.classList.toggle('sel', b.dataset.zr === zMode));
     const r = zCurrentRange();
-    document.getElementById('zBody').innerHTML = zBodyHtml(r.from, r.to);
+    refreshZMakers(r.from, r.to);
+    document.getElementById('zBody').innerHTML = zBodyHtml(r.from, r.to, zMaker);
   }
+  document.getElementById('zMakerSel').addEventListener('change', function(){
+    zMaker = this.value;
+    const r = zCurrentRange();
+    document.getElementById('zBody').innerHTML = zBodyHtml(r.from, r.to, zMaker);
+  });
   document.querySelectorAll('#zRangeType button').forEach(b =>
     b.addEventListener('click', () => { zMode = b.dataset.zr; refreshZ(); }));
   ['zDate','zMonth','zYear','zFrom','zTo'].forEach(id =>
@@ -8293,6 +8384,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('zYear').value  = today.slice(0,4);
     document.getElementById('zFrom').value  = today;
     document.getElementById('zTo').value    = today;
+    zMaker = '';   // always opens on the whole shop
     refreshZ();
     document.getElementById('zReportModal').style.display='flex';
   });
@@ -8301,9 +8393,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
   document.getElementById('zPrintBtn').addEventListener('click', () => {
     const r = zCurrentRange();
+    // Print what is actually on the screen, maker filter and all - printing
+    // the whole shop while the screen shows one supplier would be a trap.
     printHtml(
       `<div class="r-head"><div class="r-shop">${escapeHtml(getShopName()||'Report')}</div>`+
-      `<div>Sales report — ${r.label}</div></div><hr>` + zBodyHtml(r.from, r.to));
+      `<div>Sales report — ${r.label}${zMaker ? ' — ' + escapeHtml(zMaker) : ''}</div></div><hr>`
+      + zBodyHtml(r.from, r.to, zMaker));
   });
   document.getElementById('zExportBtn').addEventListener('click', () => {
     const r = zCurrentRange();
