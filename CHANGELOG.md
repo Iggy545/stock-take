@@ -9,6 +9,39 @@ fixes.
 
 ---
 
+## v1.30.0 - 29 August 2026, 20:30
+
+### Added
+- **The till now tells you when something has sold on the website.** Ring a web order
+  through on one device and every **other** till flashes it up straight away: what sold,
+  its code, and which folder it lives in, so it can be taken off the shop floor before
+  somebody buys it again at the counter. Its own three-note sound, so it is not mistaken
+  for a scan.
+- A red banner above the tabs - visible on every tab, not just Stock - stays until each
+  order is ticked off with **Got it - off the floor**. Tap the banner to see the list
+  again at any time.
+- A basket of three things is **one** job, not three interruptions. The website order
+  number is on it where there is one, so it can be matched back to the store's order list.
+
+### Worth knowing
+- **It needs team sync on, and two devices.** It is the arrival of the sale from another
+  till that raises it; the device the sale was rung through on is never told, because the
+  person using it is holding the thing.
+- **Nothing here talks to the website**, exactly like the website list. It rides on the
+  sale record the shop already makes, which is why it works today with nothing bought and
+  nothing switched on at SumUp. When the shop's own checkout arrives it writes that same
+  record, and this fires with no human in the loop at all.
+- A sale more than **twelve hours old never flashes up**. Connecting to sync hands the
+  till the whole sales history at once, and without that limit opening a till on Monday
+  morning would flash up every web sale the shop has ever made.
+- Refunds do not raise anything - stock coming back is not a job anyone has to be pulled
+  off the counter for - and neither do misc amounts, which were never on a shelf.
+- A job left waiting **survives a reload**, and ticking one off is remembered, so a
+  reconnect cannot raise the same order twice.
+- New tests: `tests/web-sold-alert.js`, 43 checks. See [Tests](tests/README.md).
+
+---
+
 ## v1.29.0 - 29 August 2026, 17:35
 
 ### Added

@@ -190,6 +190,47 @@
   #exportBannerGo{background:var(--clay);color:#fff;}
   #exportBannerClose{background:none;color:var(--muted);font-size:15px;padding:8px 6px;}
 
+  /* Sold on the website. Louder than the other banners on purpose: the others
+     are notices, this one is a job -- something is still on the shelf that has
+     already been paid for, and a customer at the counter can pick it up. */
+  .websold-banner{
+    display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+    background:var(--moss);border:1px solid var(--moss-dark);border-radius:12px;
+    padding:10px 12px;margin-bottom:12px;font-size:13px;font-weight:700;
+    color:#fff;cursor:pointer;font-family:inherit;
+  }
+  .websold-banner .grow{flex:1;min-width:0;}
+  .websold-banner .sub{display:block;font-size:11px;font-weight:400;opacity:.85;margin-top:2px;}
+  .websold-banner .n{
+    background:#fff;color:var(--moss-dark);border-radius:8px;
+    padding:2px 9px;font-size:13px;font-weight:700;flex:none;
+  }
+  /* Under the confirm box (150) so "are you sure" still lands on top of it,
+     over everything else so it cannot open behind an edit form. */
+  #webSoldModal{z-index:140;}
+  .websold-lead{font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 12px;}
+  .websold-txn{border:1px solid var(--moss);border-radius:12px;padding:10px 12px;margin-bottom:10px;}
+  .websold-head{
+    display:flex;align-items:baseline;gap:8px;font-size:11px;font-weight:700;
+    color:var(--moss-dark);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;
+  }
+  .websold-head .when{margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);}
+  .websold-item{padding:7px 0;border-bottom:1px solid var(--line);}
+  .websold-item:last-of-type{border-bottom:none;}
+  .websold-item .nm{font-size:15px;font-weight:700;line-height:1.3;}
+  .websold-item .where{font-size:12px;color:var(--muted);margin-top:3px;}
+  .websold-item .code{
+    font-family:monospace;font-size:11px;background:var(--line);color:var(--ink);
+    border-radius:6px;padding:2px 6px;margin-right:6px;
+  }
+  .websold-item .many{color:var(--danger);font-weight:700;}
+  .websold-got{
+    width:100%;margin-top:10px;border:none;border-radius:10px;padding:11px;
+    background:var(--moss);color:#fff;font-size:14px;font-weight:700;
+    cursor:pointer;font-family:inherit;
+  }
+  .websold-got:active{background:var(--moss-dark);}
+
   /* New count folder picker */
   .nc-row{
     display:flex;align-items:center;gap:10px;
@@ -702,6 +743,16 @@
     <button id="exportBannerGo" type="button">Export now</button>
     <button id="exportBannerClose" type="button" aria-label="Not now">✕</button>
   </div>
+  <!-- Something sold on the website and is still on the shop floor. Sits above
+       the tabs so it is visible from the till as well as the stock list. -->
+  <button type="button" class="websold-banner" id="webSoldBanner" style="display:none;">
+    <span>🛍️</span>
+    <span class="grow">
+      <span id="webSoldBannerText">Sold on the website</span>
+      <span class="sub">Tap to see what to take off the shop floor</span>
+    </span>
+    <span class="n" id="webSoldBannerCount">0</span>
+  </button>
   <div class="tabs">
     <div class="tab active" data-tab="list"><span class="tab-ic">📦</span>Stock</div>
     <div class="tab" data-tab="till"><span class="tab-ic">🛒</span>Till</div>
@@ -1004,6 +1055,22 @@
     <div class="btn-row">
       <button class="btn btn-secondary" id="webTodoClose">Close</button>
       <button class="btn btn-primary" id="webTodoAllBtn">Tick everything off</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sold on the website, still on the shelf. Raised by the sync layer when a
+     web sale arrives from ANOTHER device -- the one it was rung through on has
+     no need to be told. Nothing here talks to the website either. -->
+<div class="modal-overlay" id="webSoldModal" style="display:none;">
+  <div class="modal">
+    <h2>🛍️ Sold on the website</h2>
+    <p class="websold-lead">
+      Paid for already. Take it off the shop floor before someone buys it at the counter.
+    </p>
+    <div id="webSoldList"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="webSoldCloseBtn">Close</button>
     </div>
   </div>
 </div>
@@ -3911,9 +3978,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.29.0';
+  const APP_VERSION = '1.30.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '17:35';
+  const BUILD_TIME  = '20:30';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4526,6 +4593,213 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
     );
   });
+
+  /* ============ Sold on the website - go and fetch it ============
+     Two channels sell off one shelf. A web order is rung through the till on
+     the `web` payment method, which is the only thing that takes the stock
+     down - but the thing itself is still sitting out on the floor where a
+     customer at the counter can pick it up, until somebody walks over and
+     collects it. And the till it was rung through on is usually not the till
+     standing at the counter.
+
+     So: when a web sale arrives over SYNC, from ANOTHER device, every other
+     till flashes it up and keeps a banner until someone says it is off the
+     floor. Nothing here talks to the website, and nothing had to be bought or
+     switched on to make it work - it rides on the sale record the shop already
+     makes. When the shop's own checkout arrives it writes that same record,
+     and this then fires with no human in the loop at all.
+
+     Two things it deliberately does NOT do: alert the device the sale was rung
+     through on (that person is holding the thing), and alert on a refund -
+     stock coming back is not a job anyone has to be interrupted for.
+     ================================================================= */
+
+  const WEB_SOLD_KEY = 'posWebSoldPending';
+  // How far back a sale still counts as news. Not decoration: Firestore's first
+  // snapshot after connecting hands over the WHOLE collection as new documents,
+  // so with no window a till opened on Monday morning would flash up every web
+  // sale the shop has ever made. Twelve hours covers a trading day, so a till
+  // opened at any point during it still gets told about the morning's orders.
+  const WEB_SOLD_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+  // pending: jobs still to do, one per transaction. done: transactions already
+  // dealt with ON THIS DEVICE, so a reconnect inside the window cannot raise
+  // the same job twice. Both persist - the person being told may have put the
+  // phone down, and a reload must not lose the job.
+  let webSold = (function(){
+    let o = null;
+    try{ o = JSON.parse(localStorage.getItem(WEB_SOLD_KEY)); }catch(e){}
+    if(!o || typeof o !== 'object') o = {};
+    const pending = Array.isArray(o.pending) ? o.pending : [];
+    const done = (o.done && typeof o.done === 'object') ? o.done : {};
+    // Anything older than the window cannot be raised again anyway, so the note
+    // that it was dealt with is dead weight. Stops this growing without limit
+    // on a till that is never cleared down.
+    const cutoff = Date.now() - (WEB_SOLD_WINDOW_MS * 2);
+    Object.keys(done).forEach(t => { if(!(Number(done[t]) > cutoff)) delete done[t]; });
+    return { pending: pending, done: done };
+  })();
+  function saveWebSold(){
+    try{ localStorage.setItem(WEB_SOLD_KEY, JSON.stringify(webSold)); }catch(e){}
+  }
+
+  // Transactions this device has already been told about, dealt with or not.
+  function webSoldKnown(){
+    const k = {};
+    Object.keys(webSold.done).forEach(t => { k[t] = 1; });
+    webSold.pending.forEach(j => { k[j.txn] = 1; });
+    return k;
+  }
+
+  // The whole decision, kept DOM-free and clear of the sync layer so it can be
+  // tested against made-up documents: of the sale records that just arrived,
+  // which deserve to interrupt somebody, and grouped how.
+  //
+  //   arrived    [{ sale, by, deleted }] straight off the snapshot
+  //   opts.mine  this device's sync client id - its own sales never alert
+  //   opts.known transactions already raised or already dealt with
+  //   opts.now / opts.windowMs   the recency window described above
+  //
+  // Grouped by transaction, because a basket of three things is one trip to the
+  // shelves, not three interruptions.
+  function planWebSoldAlerts(arrived, opts){
+    const o = opts || {};
+    const mine = o.mine || null;
+    const known = o.known || {};
+    const now = o.now || Date.now();
+    const windowMs = (o.windowMs == null) ? WEB_SOLD_WINDOW_MS : o.windowMs;
+    const byTxn = {};
+    const order = [];
+    (arrived || []).forEach(entry => {
+      if(!entry || entry.deleted) return;
+      const s = entry.sale;
+      if(!s || typeof s !== 'object') return;
+      // Our own sale, echoed back to us.
+      if(mine && entry.by === mine) return;
+      if(String(s.pay) !== 'web') return;
+      // A refund puts stock back; there is nothing to go and fetch.
+      if((s.kind || 'sale') !== 'sale') return;
+      // A misc amount - a reading, a deposit - was never on a shelf.
+      if(s.misc) return;
+      if(!s.barcode) return;
+      const at = Date.parse(s.at || '');
+      if(!(at > 0) || (now - at) > windowMs) return;
+      // Lines carry their own id; the transaction is what groups them. Falling
+      // back to the line id means a legacy line with no txn is still told, as
+      // its own single-item job, rather than being silently dropped.
+      const txn = String(s.txn || s.id || '');
+      if(!txn || known[txn]) return;
+      if(!byTxn[txn]){
+        byTxn[txn] = { txn: txn, receiptNo: s.receiptNo || null, webRef: null,
+                       at: s.at || '', lines: [] };
+        order.push(txn);
+      }
+      const job = byTxn[txn];
+      // The order number rides on the first line only, like the card details.
+      if(s.webRef && !job.webRef) job.webRef = s.webRef;
+      job.lines.push({ barcode: s.barcode, name: s.name || '',
+                       maker: s.maker || '', qty: Number(s.qty) || 0 });
+    });
+    return order.map(t => byTxn[t]);
+  }
+
+  // Called by the sync layer with whatever a snapshot just delivered.
+  function noteWebSales(arrived, mine){
+    const jobs = planWebSoldAlerts(arrived, { mine: mine, known: webSoldKnown() });
+    if(!jobs.length) return;
+    webSold.pending = webSold.pending.concat(jobs);
+    saveWebSold();
+    renderWebSoldBanner();
+    openWebSold(true);
+  }
+
+  function webSoldClear(txn){
+    webSold.pending = webSold.pending.filter(j => j.txn !== txn);
+    webSold.done[txn] = Date.now();
+    saveWebSold();
+    renderWebSoldBanner();
+    renderWebSoldList();
+    if(webSold.pending.length === 0){
+      document.getElementById('webSoldModal').style.display = 'none';
+      showToast('Off the floor', 'success');
+    }
+  }
+
+  function renderWebSoldBanner(){
+    const el = document.getElementById('webSoldBanner');
+    if(!el) return;
+    if(webSold.pending.length === 0){ el.style.display = 'none'; return; }
+    const things = webSold.pending.reduce((a, j) => a + j.lines.length, 0);
+    document.getElementById('webSoldBannerCount').textContent = things;
+    document.getElementById('webSoldBannerText').textContent =
+      things === 1 ? 'Sold on the website - still on the shop floor'
+                   : things + ' sold on the website - still on the shop floor';
+    el.style.display = 'flex';
+  }
+
+  function renderWebSoldList(){
+    const wrap = document.getElementById('webSoldList');
+    if(!wrap) return;
+    if(webSold.pending.length === 0){
+      wrap.innerHTML = '<div class="empty-state">Nothing waiting - it is all off the floor.</div>';
+      return;
+    }
+    wrap.innerHTML = webSold.pending.map(job => {
+      const d = new Date(job.at);
+      const when = isNaN(d.getTime()) ? ''
+        : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const head = job.webRef ? 'Order no. ' + escapeHtml(job.webRef)
+                 : (job.receiptNo ? 'Receipt ' + escapeHtml(String(job.receiptNo))
+                                  : 'Website order');
+      const rows = job.lines.map(l => {
+        // Where it lives on the floor. The folder is the shop's own shelving
+        // (Maker/Category); an item deleted since the sale falls back to what
+        // the sale line itself remembers.
+        const it = items[l.barcode];
+        const where = (it && it.folder) ? it.folder : (l.maker || '');
+        return '<div class="websold-item">'
+          + '<div class="nm">' + escapeHtml(l.name || '(unnamed)')
+          + (l.qty > 1 ? ' <span class="many">&times;' + l.qty + '</span>' : '')
+          + '</div>'
+          + '<div class="where"><span class="code">' + escapeHtml(l.barcode) + '</span>'
+          + escapeHtml(where || 'no folder set') + '</div>'
+          + '</div>';
+      }).join('');
+      return '<div class="websold-txn">'
+        + '<div class="websold-head"><span>' + head + '</span>'
+        + '<span class="when">' + escapeHtml(when) + '</span></div>'
+        + rows
+        + '<button type="button" class="websold-got" data-txn="'
+        + escapeAttr(job.txn) + '">Got it - off the floor</button>'
+        + '</div>';
+    }).join('');
+    wrap.querySelectorAll('.websold-got').forEach(b => {
+      b.addEventListener('click', () => webSoldClear(b.getAttribute('data-txn')));
+    });
+  }
+
+  function openWebSold(flash){
+    if(webSold.pending.length === 0) return;
+    renderWebSoldList();
+    document.getElementById('webSoldModal').style.display = 'flex';
+    if(flash){
+      // Its own sound. The scan blip means "that worked"; this one has to carry
+      // across a shop and not be mistaken for someone ringing something up.
+      initAudio(); beep('websold'); buzz([90, 70, 90, 70, 200]);
+    }
+  }
+
+  document.getElementById('webSoldBanner').addEventListener('click', () => openWebSold(false));
+  document.getElementById('webSoldCloseBtn').addEventListener('click', () => {
+    document.getElementById('webSoldModal').style.display = 'none';
+  });
+  document.getElementById('webSoldModal').addEventListener('click', (e) => {
+    if(e.target === document.getElementById('webSoldModal')){
+      document.getElementById('webSoldModal').style.display = 'none';
+    }
+  });
+  // A job left over from before the page was reloaded is still a job.
+  renderWebSoldBanner();
 
   // ---- Rendering ----
   function renderSession(){
@@ -9284,6 +9558,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
         osc.start(now);
         osc.stop(now + 0.3);
+      } else if(kind === 'websold'){
+        // Three rising notes. Has to carry across a shop and, more to the
+        // point, must not sound like the scan blip - the whole message is
+        // "stop what you are doing", not "that worked".
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(660, now);
+        osc.frequency.setValueAtTime(880, now + 0.14);
+        osc.frequency.setValueAtTime(1170, now + 0.28);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+        gain.gain.setValueAtTime(0.22, now + 0.40);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.52);
+        osc.start(now);
+        osc.stop(now + 0.54);
       } else {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(1050, now);  // crisp supermarket-style blip
@@ -10871,9 +11159,20 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         if(touched){ _origSaveItems(); saveTimes(); renderList(document.getElementById('searchBox')?document.getElementById('searchBox').value:''); renderSold(); }
       }, onSnapErr));
       listeners.push(salesCol.onSnapshot(function(snap){
-        var touched=false;
-        snap.docChanges().forEach(function(ch){ if(applyRemoteSale(ch.doc.id, ch.doc.data())) touched=true; });
+        var touched=false, arrived=[];
+        snap.docChanges().forEach(function(ch){
+          var d=ch.doc.data();
+          // Collected BEFORE applyRemoteSale, which throws the document away
+          // once it has merged it. `by` is what tells a sale rung through on
+          // another till from this one's own writes coming back.
+          if(d) arrived.push({ sale: d.data, by: d.by, deleted: !!d.deleted });
+          if(applyRemoteSale(ch.doc.id, d)) touched=true;
+        });
         if(touched){ _origSaveSales(); saveTimes(); renderSold(); renderList(document.getElementById('searchBox')?document.getElementById('searchBox').value:''); }
+        // Last, and never allowed to break the merge above: something sold on
+        // the website is still sitting on the shop floor. See the "Sold on the
+        // website" section.
+        try{ noteWebSales(arrived, clientId); }catch(e){}
       }, onSnapErr));
       listeners.push(metaDoc.onSnapshot(function(doc){
         if(doc.exists && applyRemoteMeta(doc.data())){ saveTimes(); renderSession(); renderList(); renderSold(); }
