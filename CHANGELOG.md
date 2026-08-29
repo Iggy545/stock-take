@@ -9,6 +9,36 @@ fixes.
 
 ---
 
+## v1.24.0 - 29 August 2026, 10:33
+
+### Changed
+- **Photographs stop costing the website money.** Nothing looks any different in the app.
+  The shop's website rebuilds its list of stock out of the same database this till writes
+  to, roughly ten times a day, and it was fetching **the whole photograph of every item**
+  each time it did. A picture taken on the till is stored on the item as about 97KB of
+  data, so fourteen photographed items meant 1.4MB dragged across the internet on every
+  rebuild - including for items that are not even on the website.
+- With about a hundred more photographs to take that would have been **roughly 2.9GB a
+  month against a 10GiB allowance**, and it never comes back down: every new photograph
+  joins it and none of them ever leave.
+- The till now stores a short **key** beside each photo - a few characters saying *which*
+  picture it is rather than the picture itself - and the website reads that. The rebuild
+  now carries a few dozen bytes per item instead of a hundred thousand.
+
+### Worth knowing
+- **The first time this build connects it will re-send every item once.** That is the key
+  being added to each record. It is a normal sync, it costs nothing, and it happens once.
+- **Take the ~100 photographs after this build is on the tills, not before.** That was the
+  whole reason for doing this first.
+- Photographs already on the website keep working while the records catch up, and a device
+  still on an older build cannot break them.
+- 19 new checks in `tests/photo-keys.js`, and the key is pinned against the two other
+  places the same fingerprint is worked out - `shop-worker` and `tools/photo-archive.py` -
+  because if those three ever disagree every embedded picture quietly stops being served
+  from the website and goes back to being fetched out of the database one at a time.
+
+---
+
 ## v1.23.0 - 28 August 2026, 15:20
 
 ### Added

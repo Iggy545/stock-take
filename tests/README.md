@@ -16,6 +16,7 @@ node tests/read-policy.js index.html
 node tests/reconcile-reads.js index.html
 node tests/sales-export.js index.html
 node tests/variant-names.js index.html
+node tests/photo-keys.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -31,6 +32,7 @@ Each prints a pass/fail line per check and exits non-zero on failure.
 | `read-policy.js` | Whether a connect may read from the local cache: the team-code switch, a cleared cache, and a refusal never being read as nothing-has-changed | v1.15.0 |
 | `reconcile-reads.js` | The real `reconcile()` against a fake Firestore — that the cheap path costs one read, and that it ends in **identical** shadow state to the full read | v1.15.0 |
 | `sales-export.js` | All three exports: that each CSV is byte for byte what it always was, and that the .xlsx is a real workbook — every part it promises present, every CRC right, money a number in a pound-sign format rather than text | v1.16.0, stock take and currency v1.17.0, Label column v1.18.0 |
+| `photo-keys.js` | The photo KEY the website reads instead of the photograph: the fingerprint three languages have to agree about, and that a key is never cleared just because its photo has not come back out of IndexedDB yet | v1.24.0 |
 | `variant-names.js` | The em dash that groups an item's colours into one card on the website: that the till splits a name exactly the way `shop-site/shop.js` does, that a hyphen is never silently promoted to a group, and that a name survives the round trip | v1.23.0 |
 
 ## If a test stops finding the code

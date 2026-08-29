@@ -3840,9 +3840,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.23.0';
-  const BUILD_DATE  = '28 Aug 2026';
-  const BUILD_TIME  = '15:20';
+  const APP_VERSION = '1.24.0';
+  const BUILD_DATE  = '29 Aug 2026';
+  const BUILD_TIME  = '10:33';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -3943,6 +3943,74 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
+  // ---- the photo key: what the picture IS, without the picture ----
+  //
+  // The website's catalogue is rebuilt out of Firestore roughly ten times a
+  // day, and it used to ask for `data.photo` on every live item. A photograph
+  // taken on the till lives in the record as a data: URI of about 97KB, so
+  // every rebuild dragged every one of them across the wire again -- and that
+  // query has no website filter, so items that never appear online were being
+  // paid for too. Fourteen photographed items was 1.4MB a rebuild; a hundred
+  // would be around 2.9GB a month against a 10GiB allowance, and it is
+  // cumulative and permanent, because every new photograph joins it.
+  //
+  // So the identity of the picture is stored beside it and shop-worker asks
+  // for THAT. A hosted photo is only an address already, so the address is the
+  // key. An embedded one becomes `data:` and a fingerprint of the bytes --
+  // fifteen characters standing in for a hundred thousand.
+  //
+  // THE FINGERPRINT IS A CONTRACT, not an implementation detail. The same
+  // function exists in shop-worker/src/catalogue.js (photoFingerprint) and in
+  // tools/photo-archive.py (photo_fingerprint), and the archived file for an
+  // embedded picture is named <barcode>-<fingerprint>.webp. Change it here and
+  // every embedded photograph on the website quietly stops being served from
+  // the site and goes back to being fetched out of the database one at a time.
+  // tests/photo-keys.js pins the values, and shop-worker's photo-key.test.js
+  // pins this copy against that one.
+  function photoFingerprint(value){
+    var s = String(value || '');
+    if(!s) return '';
+    var h = 0x811c9dc5;
+    for(var i=0;i<s.length;i++){
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(36) + s.length.toString(36);
+  }
+
+  // SHARED.md: a photo is a data: URI or an https:// URL and anything else is
+  // not a photo. Anything else gets no key, so it cannot become a link.
+  function photoKeyFor(p){
+    var s = String(p || '');
+    if(s.indexOf('https://') === 0) return s;
+    if(s.indexOf('data:image/') === 0) return 'data:' + photoFingerprint(s);
+    return '';
+  }
+
+  // Keep every item's key agreeing with its photo. Called from saveItems, so it
+  // runs on every change to the stock -- a sale, an edit, a record arriving over
+  // sync -- and no caller has to remember it.
+  //
+  // THE CARE THIS NEEDS is the same care reconcilePhotos needs, for the same
+  // reason. An item with no `photo` in memory is usually one whose picture has
+  // not come back out of IndexedDB yet, NOT one with no picture, and clearing
+  // its key would take that item's photograph off the website until somebody
+  // happened to edit it. `hasPhoto` is the marker that tells the two apart;
+  // photoCleared is the one case where empty really does mean removed.
+  function reconcilePhotoKeys(){
+    Object.keys(items).forEach(function(bc){
+      var it = items[bc];
+      if(!it) return;
+      if(it.photo){
+        var k = photoKeyFor(it.photo);
+        if(k) it.photoKey = k; else delete it.photoKey;
+        return;
+      }
+      if(it.hasPhoto && !it.photoCleared) return;   // not loaded yet - say nothing
+      delete it.photoKey;
+    });
+  }
+
   // A copy of items with photos removed, for localStorage (keeps it small).
   function strippedForStorage(){
     if(!photoStoreOK) return items;   // fallback: keep photos inline as before
@@ -3967,6 +4035,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function saveItems(){
     try{
       reconcilePhotos();
+      reconcilePhotoKeys();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(strippedForStorage()));
       // Every change to the stock passes through here — a sale, a refund, an
       // edit, a record arriving over sync — so this is the one place that keeps
