@@ -125,6 +125,39 @@ console.log('\nThe sales report CSV');
   // the heading is written even for a quiet period, which is what it did before
   const empty = ctx.zReportCsv(f, 'x', { rows: [], ratePct: 1.69, webRatePct: 2.5 });
   check('a period with no makers still gets the payouts heading', empty.indexOf('\nSupplier payouts\n') !== -1);
+  // A shop that has never taken a misc amount must get the file it always got,
+  // which is the whole reason the section is conditional.
+  check('a period with no misc amounts has no Miscellaneous section',
+        csv.indexOf('Miscellaneous') === -1);
+}
+
+console.log('\nThe sales report CSV, with misc amounts in it');
+{
+  const f = miscReportFigures();
+  const p = payoutFigures();
+  const csv = ctx.zReportCsv(f, '20 August 2026', p);
+  const want = oldReportCsv(f, '20 August 2026', p);
+  check('byte for byte what the reference writes', csv === want,
+        csv === want ? '' : '\n--- got ---\n' + csv + '--- want ---\n' + want);
+  check('the Miscellaneous section is there', csv.indexOf('\nMiscellaneous\n') !== -1);
+  // It goes between the sellers and the payouts, so the two lists of what was
+  // taken sit together and the money owed stays at the bottom.
+  check('it sits after Top sellers and before Supplier payouts',
+        csv.indexOf('\nTop sellers\n') < csv.indexOf('\nMiscellaneous\n') &&
+        csv.indexOf('\nMiscellaneous\n') < csv.indexOf('\nSupplier payouts\n'));
+  check('the summary names the total', csv.indexOf('"Miscellaneous","27.50"') !== -1);
+  // The description is the only record of what the money was for, so losing it
+  // here would make the whole feature pointless.
+  check('each description is written out',
+        csv.indexOf('"Tarot reading"') !== -1 && csv.indexOf('Workshop deposit ""June""') !== -1);
+  check('how it was paid for is written out', csv.indexOf('"card"') !== -1 && csv.indexOf('"cash"') !== -1);
+  check('a refunded misc amount is marked as one and is negative',
+        csv.indexOf('"refund"') !== -1 && csv.indexOf('"-12.50"') !== -1);
+  const miscBlock = csv.slice(csv.indexOf('\nMiscellaneous\n'), csv.indexOf('\nSupplier payouts\n'));
+  check('the section has a header, its three lines and a total',
+        miscBlock.trim().split('\n').length === 6, miscBlock);
+  check('the total row keeps its blanks blank',
+        miscBlock.indexOf('"TOTAL","","","","","","27.50"') !== -1, miscBlock);
 }
 
 console.log('\nThe stock take CSV');
@@ -344,6 +377,34 @@ function readZip(buf) {
   const badR = rentries.filter(e => zlib.crc32(e.data) !== e.crc);
   check('every CRC still matches with three sheets', badR.length === 0);
 
+  console.log('\nThe report as a workbook, with misc amounts in it');
+  const msheets = ctx.zReportSheets(miscReportFigures(), '20 August 2026', payoutFigures());
+  const mbuf = Buffer.from(await ctx.buildXlsx(msheets).arrayBuffer());
+  let mentries = [];
+  try { mentries = readZip(mbuf); } catch (e) { check('the misc report archive reads back', false, e.message); }
+  const mnames = mentries.map(e => e.name);
+  check('the misc amounts get a sheet of their own', msheets.length === 4, String(msheets.length));
+  check('four sheets means four parts',
+        ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml', 'xl/worksheets/sheet3.xml',
+         'xl/worksheets/sheet4.xml'].every(n => mnames.indexOf(n) !== -1));
+  const mwb = (mentries.filter(e => e.name === 'xl/workbook.xml')[0] || { data: Buffer.alloc(0) }).data.toString('utf8');
+  check('it is named in the workbook, before the payouts',
+        mwb.indexOf('name="Miscellaneous"') !== -1 &&
+        mwb.indexOf('name="Miscellaneous"') < mwb.indexOf('name="Supplier payouts"'));
+  check('the sheet ids and relationships line up', mwb.indexOf('sheetId="4" r:id="rId4"') !== -1);
+  const mdeclared = ((mentries.filter(e => e.name === '[Content_Types].xml')[0] || { data: Buffer.alloc(0) }).data.toString('utf8')
+    .match(/PartName="\/([^"]+)"/g) || []).map(s => s.replace(/PartName="\//, '').replace(/"$/, ''));
+  check('nothing is promised that is not there', mdeclared.every(n => mnames.indexOf(n) !== -1));
+  check('every CRC still matches with four sheets',
+        mentries.filter(e => zlib.crc32(e.data) !== e.crc).length === 0);
+  const msheet = (mentries.filter(e => e.name === 'xl/worksheets/sheet3.xml')[0] || { data: Buffer.alloc(0) }).data.toString('utf8');
+  // The amount has to arrive as a number in the money style, the same as every
+  // other sum in the workbook - a description column next to it is no excuse.
+  check('the amount is a number in the money style', msheet.indexOf('<c r="G2" s="2"><v>30.00</v></c>') !== -1, msheet.slice(0, 400));
+  check('a refunded one keeps its minus sign', msheet.indexOf('<v>-12.50</v>') !== -1);
+  check('the description reads as text',
+        msheet.indexOf('<c r="E2" t="inlineStr"><is><t xml:space="preserve">Tarot reading</t></is></c>') !== -1);
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 })();
@@ -361,6 +422,19 @@ function reportFigures() {
       c: { name: 'Tarot Deck', qty: 1, net: -15 },
     },
   };
+}
+
+// The same period, but with three misc amounts taken in it: two sold and one
+// given back. The refund is what proves f.misc is the money actually kept.
+function miscReportFigures() {
+  const f = reportFigures();
+  f.misc = 27.5;
+  f.miscLines = [
+    { at: iso(AT + 180000), receiptNo: 15, name: 'Tarot reading', qty: 1, pay: 'card', net: 30, kind: 'sale' },
+    { at: iso(AT + 240000), receiptNo: 16, name: 'Workshop deposit "June"', qty: 1, pay: 'cash', net: 10, kind: 'sale' },
+    { at: iso(AT + 300000), receiptNo: 17, name: 'Tarot reading', qty: -1, pay: 'card', net: -12.5, kind: 'refund' },
+  ];
+  return f;
 }
 
 function payoutFigures() {
@@ -427,15 +501,32 @@ function oldStockCsv(items) {
 function oldReportCsv(f, label, p) {
   const esc = v => `"${String(v).replace(/"/g, '""')}"`;
   let csv = 'Metric,Value\n';
-  [['Period', label], ['Net takings', f.net.toFixed(2)], ['Transactions', f.txns],
+  const summary = [['Period', label], ['Net takings', f.net.toFixed(2)], ['Transactions', f.txns],
    ['Items sold', f.units], ['Cash', f.pay.cash.toFixed(2)], ['Card', f.pay.card.toFixed(2)],
    ['Website', f.pay.web.toFixed(2)], ['Other', f.pay.other.toFixed(2)],
-   ['Discounts', f.discounts.toFixed(2)], ['Refunds', f.refunds.toFixed(2)]
-  ].forEach(r => { csv += r.map(esc).join(',') + '\n'; });
+   ['Discounts', f.discounts.toFixed(2)], ['Refunds', f.refunds.toFixed(2)]];
+  // v1.27.0 added misc amounts, and with them these two additions to this file,
+  // DELIBERATELY: money taken for something that was not stock is in the
+  // takings, and until now there was nowhere to read back what it was for.
+  // Both are written only when there were any, so a shop that has never taken
+  // one gets a byte-identical file to the one it has always got.
+  if (f.misc) summary.push(['Miscellaneous', f.misc.toFixed(2)]);
+  summary.forEach(r => { csv += r.map(esc).join(',') + '\n'; });
   csv += '\nTop sellers\nItem,Qty,Net\n';
   Object.keys(f.sellers).map(k => f.sellers[k]).sort((x, y) => y.net - x.net).forEach(t => {
     csv += [t.name, t.qty, t.net.toFixed(2)].map(esc).join(',') + '\n';
   });
+  if (f.miscLines && f.miscLines.length) {
+    let misc = 'Date,Time,Receipt,Type,For,Payment,Amount\n';
+    f.miscLines.forEach(m => {
+      const d = new Date(m.at);
+      misc += [d.toLocaleDateString(), d.toLocaleTimeString(), ctx.fmtReceiptNo(m.receiptNo),
+        m.kind === 'refund' ? 'refund' : 'sale', m.name, m.pay || '', m.net.toFixed(2)]
+        .map(esc).join(',') + '\n';
+    });
+    misc += ['TOTAL', '', '', '', '', '', f.misc.toFixed(2)].map(esc).join(',') + '\n';
+    csv += '\nMiscellaneous\n' + misc;
+  }
   let payouts = `Maker,Items,Pay from cash,Pay from card,Pay from website,Pay from other,Owed,`
     + `Card sales,Website sales,Refunds,Card fee (${p.ratePct}%),Website fee (${p.webRatePct}%)\n`;
   p.rows.forEach(m => {

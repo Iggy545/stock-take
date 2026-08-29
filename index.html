@@ -758,7 +758,10 @@
       </div>
     </div>
     <div class="btn-row">
+      <button class="btn btn-secondary" id="miscAmountBtn">📝 Misc amount</button>
       <button class="btn btn-secondary" id="basketDiscountBtn">% Discount</button>
+    </div>
+    <div class="btn-row" style="margin-top:8px;">
       <button class="btn btn-secondary" id="promoBtn">🎟 Promo code</button>
       <button class="btn btn-secondary" id="clearCartBtn">Empty basket</button>
     </div>
@@ -1387,6 +1390,27 @@
       <button class="btn btn-primary" id="leSave">Apply</button>
     </div>
     <button class="btn btn-danger" id="leRemove" style="margin-top:8px;">Remove from basket</button>
+  </div>
+</div>
+
+<!-- A manual amount to charge for: something that is not stock -->
+<div class="modal-overlay" id="miscModal" style="display:none;">
+  <div class="modal">
+    <h2>Misc amount</h2>
+    <label for="miscAmountInput">Amount (£)</label>
+    <input type="number" id="miscAmountInput" placeholder="0.00" inputmode="decimal" step="0.01" min="0">
+    <label for="miscDescInput" style="margin-top:10px;">What is it for?</label>
+    <input type="text" id="miscDescInput" placeholder="e.g. Tarot reading, workshop deposit" autocomplete="off">
+    <div class="folder-hint">
+      It goes in the basket like an item, so it is paid for exactly the same way — cash,
+      or sent to the card reader with the rest of the sale. Nothing comes off the shelf,
+      and the sales report lists it on its own as <b>miscellaneous</b> rather than counting
+      it as stock sold.
+    </div>
+    <div class="btn-row" style="margin-top:8px;">
+      <button class="btn btn-secondary" id="miscCancel">Cancel</button>
+      <button class="btn btn-primary" id="miscAdd">Add to basket</button>
+    </div>
   </div>
 </div>
 
@@ -3864,9 +3888,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.26.0';
+  const APP_VERSION = '1.27.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '12:08';
+  const BUILD_TIME  = '13:55';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5498,7 +5522,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   function cartOnHand(barcode){
     const it = items[barcode];
     if(!it) return 0;
-    const inCart = cart.lines.filter(l => l.barcode===barcode).reduce((s,l) => s+l.qty, 0);
+    // A misc line is not stock, so it never eats into what is left to sell -
+    // even if somebody has an item coded MISC.
+    const inCart = cart.lines.filter(l => l.barcode===barcode && !l.misc).reduce((s,l) => s+l.qty, 0);
     return (Number(it.counted)||0) - inCart;
   }
 
@@ -5530,6 +5556,49 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     return true;
   }
+
+  /* ===================== Misc amounts =====================
+     Something to charge for that was never stock: a reading, a workshop
+     deposit, a repair, postage. It goes into the basket as an ordinary line,
+     so the whole till works on it unchanged - the running total, the card
+     reader, the receipt, the refund screen - and there is nothing new to learn
+     at the counter.
+
+     What it carries is one extra field, `misc`. That is what stops the till
+     trying to take it off a shelf it was never on, and what lets the sales
+     report list it apart from the stock that sold: it is money taken, but it
+     is not an item sold, and adding it to that count would make the report
+     disagree with the shelf.
+
+     The description IS the line's name, which is why nothing else has to be
+     taught about misc lines. It reaches the receipt, the sold list and every
+     export the same way an item's name does.
+     ========================================================= */
+  const MISC_BARCODE = 'MISC';
+
+  // Returns null when the line went in, or the sentence to show when it didn't.
+  function addMiscToCart(amount, desc){
+    const price = round2(Number(amount)||0);
+    const name = String(desc||'').trim();
+    if(!(price > 0)) return 'Put in an amount above £0.00';
+    if(!name) return 'Say what the amount is for - it goes on the receipt and the report';
+    // Not merged with an existing line the way a scanned item is: two misc
+    // amounts in one sale are two different things, and folding them together
+    // would throw one of the two descriptions away.
+    cart.lines.push({
+      barcode: MISC_BARCODE,
+      name: name,
+      maker: '',
+      price: price,
+      qty: 1,
+      disc: null,
+      misc: true
+    });
+    saveCart();
+    renderTill();
+    return null;
+  }
+  /* =================== end misc amounts =================== */
 
   // ---- Set pricing ----
   // Two items that cost less bought together than bought apart. The rule lives
@@ -5587,11 +5656,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(!lines.length) return { disc: disc, applied: applied };
 
     const idxOf = {};
-    lines.forEach((l,i) => { if(idxOf[l.barcode]===undefined) idxOf[l.barcode] = i; });
+    lines.forEach((l,i) => { if(!l.misc && idxOf[l.barcode]===undefined) idxOf[l.barcode] = i; });
     // A line somebody has already discounted by hand sits out. Stacking a set
     // price on top of a keyed-in discount gives a total nobody at the counter
-    // can explain.
-    const avail = lines.map(l => (l.disc && l.disc.value) ? 0 : l.qty);
+    // can explain. A misc amount sits out too - it is not one of the items a
+    // set rule can be about.
+    const avail = lines.map(l => (l.misc || (l.disc && l.disc.value)) ? 0 : l.qty);
 
     const rules = setRules().map(r => {
       const idxs = r.members.map(m => idxOf[m]);
@@ -5704,7 +5774,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           <div class="cart-line">
             <div class="cl-info" data-edit="${i}">
               <div class="cl-name">${escapeHtml(l.name)}</div>
-              <div class="cl-meta">${money(l.price)} each · tap for discount</div>
+              <div class="cl-meta">${l.misc ? '📝 Misc amount · tap to edit'
+                                            : money(l.price) + ' each · tap for discount'}</div>
               ${discNote}
               ${setNote}
             </div>
@@ -5725,7 +5796,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }));
       linesEl.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', () => {
         const l = cart.lines[Number(b.dataset.plus)];
-        if(cartOnHand(l.barcode) <= 0){ showToast('No more stock of that item', 'error'); return; }
+        // A misc amount has no shelf to run out of
+        if(!l.misc && cartOnHand(l.barcode) <= 0){ showToast('No more stock of that item', 'error'); return; }
         l.qty += 1;
         saveCart(); renderTill();
       }));
@@ -6227,7 +6299,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('leQtyPlus').addEventListener('click', () => {
     if(editingLineIdx===null) return;
     const l = cart.lines[editingLineIdx];
-    const max = l && items[l.barcode] ? (Number(items[l.barcode].counted)||0) : leQty;
+    const max = (l && l.misc) ? Infinity
+              : (l && items[l.barcode] ? (Number(items[l.barcode].counted)||0) : leQty);
     if(leQty >= max){ showToast('No more stock of that item', 'error'); return; }
     leQty++; refreshLineEdit();
   });
@@ -6261,6 +6334,30 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('lineEditModal').style.display='none';
   });
   document.getElementById('basketDiscountBtn').addEventListener('click', openBasketDiscount);
+  document.getElementById('miscAmountBtn').addEventListener('click', () => {
+    document.getElementById('miscAmountInput').value = '';
+    document.getElementById('miscDescInput').value = '';
+    document.getElementById('miscModal').style.display = 'flex';
+    document.getElementById('miscAmountInput').focus();
+  });
+  document.getElementById('miscCancel').addEventListener('click', () => {
+    document.getElementById('miscModal').style.display = 'none';
+  });
+  document.getElementById('miscModal').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) e.currentTarget.style.display = 'none';
+  });
+  document.getElementById('miscAdd').addEventListener('click', () => {
+    const err = addMiscToCart(document.getElementById('miscAmountInput').value,
+                              document.getElementById('miscDescInput').value);
+    if(err){ showToast(err, 'error'); return; }
+    document.getElementById('miscModal').style.display = 'none';
+    showToast('Added to basket', 'success');
+  });
+  // Enter on the description is the natural way to finish, since it is the last
+  // box: the amount is typed, then what it was for, then done.
+  document.getElementById('miscDescInput').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('miscAdd').click(); }
+  });
   document.getElementById('clearCartBtn').addEventListener('click', () => {
     if(cart.lines.length===0) return;
     askConfirm('Empty the basket?', 'Nothing has been sold — the items just leave the basket.', 'Empty basket', () => {
@@ -6275,6 +6372,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // Stock can change under the basket (another device, an edit) — re-check now
     let adjusted = false;
     cart.lines.forEach(l => {
+      if(l.misc) return;   // nothing on a shelf to re-check
       const have = items[l.barcode] ? (Number(items[l.barcode].counted)||0) : 0;
       if(l.qty > have){ l.qty = have; adjusted = true; }
     });
@@ -6588,8 +6686,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const setShare = round2(f.setLine[i]||0);
       const disc = round2(lineDiscAmount(l) + setShare + shares[i]);
       const net  = round2(l.qty*l.price - disc);
-      // take the stock off the shelf
-      if(items[l.barcode]){
+      // take the stock off the shelf. A misc amount has none, and is skipped on
+      // its own flag rather than on its barcode, in case an item is ever coded
+      // MISC by hand.
+      if(!l.misc && items[l.barcode]){
         items[l.barcode].counted = Math.max(0, (Number(items[l.barcode].counted)||0) - l.qty);
       }
       // tendered/change live on the first line only; null (not undefined)
@@ -6619,6 +6719,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // How much of this line's discount came from a set price, so the
         // receipt can call it that instead of a plain discount.
         setDisc: setShare > 0 ? setShare : null,
+        // A manual amount rather than something off the shelf. Written as true
+        // or null, never undefined, because Firestore refuses undefined.
+        misc: l.misc ? true : null,
         kind: 'sale',
         refundOfLine: null,
         promo: (cart.promo && f.promoDisc>0) ? cart.promo.code : null,
@@ -6933,8 +7036,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     rows.forEach(r => {
       const unitNet = lineNet(r.line)/Math.max(1, lineQty(r.line));
       const amount = round2(unitNet * r.take);
-      // put the stock back on the shelf
-      if(items[r.line.barcode]){
+      // put the stock back on the shelf - a misc amount never left one
+      if(!r.line.misc && items[r.line.barcode]){
         items[r.line.barcode].counted = (Number(items[r.line.barcode].counted)||0) + r.take;
       }
       sales.push({
@@ -6964,6 +7067,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // long ago and nagging about them now would be noise.
         cardRefund: rpay === 'card' ? 'due' : null,
         setDisc: null,
+        misc: r.line.misc ? true : null,
         kind: 'refund',
         refundOfLine: r.line.id || null,
         staff: currentStaff() || null,
@@ -7031,6 +7135,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
   function zFigures(fromStr, toStr){
     const f = { gross:0, discounts:0, refunds:0, net:0, txns:0, units:0,
+                misc:0, miscLines:[],
                 pay:{cash:0, card:0, web:0, other:0}, sellers:{} };
     const seen = {};
     sales.forEach(s => {
@@ -7042,19 +7147,35 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       } else {
         f.gross += q*(Number(s.price)||0);
         f.discounts += Number(s.disc)||0;
-        f.units += q;
+        // A misc amount is money taken, so it belongs in the takings and in
+        // whichever payment method it came in on. It is NOT an item sold: it
+        // never came off a shelf, so counting it would put the report at odds
+        // with the stock, and it has no business in "what sold best" either.
+        // It gets its own list further down, which is the only place its
+        // description is any use after the receipt.
+        if(!s.misc){
+          f.units += q;
+          const key = s.barcode || s.name;
+          if(!f.sellers[key]) f.sellers[key] = { name:s.name, qty:0, net:0 };
+          f.sellers[key].qty += q;
+          f.sellers[key].net = round2(f.sellers[key].net + net);
+        }
+        // A sale of nothing but a misc amount is still a sale, so it is counted
+        // whichever kind of line it was.
         seen[lineTxn(s)] = 1;
-        const key = s.barcode || s.name;
-        if(!f.sellers[key]) f.sellers[key] = { name:s.name, qty:0, net:0 };
-        f.sellers[key].qty += q;
-        f.sellers[key].net = round2(f.sellers[key].net + net);
+      }
+      if(s.misc){
+        f.misc += net;   // signed, so refunding one takes it back off again
+        f.miscLines.push({ at:s.at||'', receiptNo:s.receiptNo||null, name:s.name||'',
+                           qty:q, pay:s.pay||'', net:net, kind:s.kind||'sale' });
       }
       f.net += net;
       const p = (s.pay==='cash'||s.pay==='card'||s.pay==='web') ? s.pay : 'other';
       f.pay[p] += net;
     });
     f.txns = Object.keys(seen).length;
-    ['gross','discounts','refunds','net'].forEach(k => f[k]=round2(f[k]));
+    f.miscLines.sort((a,b) => String(a.at).localeCompare(String(b.at)));
+    ['gross','discounts','refunds','net','misc'].forEach(k => f[k]=round2(f[k]));
     Object.keys(f.pay).forEach(k => f.pay[k]=round2(f.pay[k]));
     return f;
   }
@@ -7101,6 +7222,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     sales.forEach(s => {
       const ld = localDateStr(new Date(s.at));
       if(ld < fromStr || ld > toStr) return;
+      // A misc amount is never owed to anybody: there is no supplier behind a
+      // reading or a deposit, and there never can be. Left in, it would land in
+      // the no-maker bucket and inflate "Total to pay out" - a figure somebody
+      // acts on with real money. It is reported on its own instead.
+      if(s.misc) return;
       const m = bucket(s.maker);
       const net = lineNet(s), q = lineQty(s);
       const pay = (s.pay==='cash' || s.pay==='card' || s.pay==='web') ? s.pay : 'other';
@@ -7474,20 +7600,48 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // The three tables behind the sales report: the figures, what sold most, and
   // what is owed to the makers. f comes from zFigures, p from makerFigures.
   function zSummaryTable(f, label){
+    const rows = [
+      ['Period', label],
+      ['Net takings', moneyCell(f.net)],
+      ['Transactions', f.txns],
+      ['Items sold', f.units],
+      ['Cash', moneyCell(f.pay.cash)],
+      ['Card', moneyCell(f.pay.card)],
+      ['Website', moneyCell(f.pay.web)],
+      ['Other', moneyCell(f.pay.other)],
+      ['Discounts', moneyCell(f.discounts)],
+      ['Refunds', moneyCell(f.refunds)]
+    ];
+    // Misc amounts are inside Net takings but deliberately outside Items sold,
+    // so the two only reconcile once this is named. Left out altogether when
+    // there were none, rather than adding a row of nothing to every report the
+    // shop has run for the last year.
+    if(f.misc) rows.push(['Miscellaneous', moneyCell(f.misc)]);
+    return { cols: [{ h:'Metric' }, { h:'Value' }], rows: rows };
+  }
+
+  // Every misc amount in the period, oldest first. A total on its own would be
+  // useless - the whole point of asking for a description is being able to read
+  // back what the money was for, so this is a list.
+  function zMiscTable(f){
+    const lines = f.miscLines || [];
+    const rows = lines.map(m => {
+      const d = new Date(m.at);
+      return [
+        d.toLocaleDateString(),
+        d.toLocaleTimeString(),
+        fmtReceiptNo(m.receiptNo),
+        m.kind === 'refund' ? 'refund' : 'sale',
+        m.name,
+        m.pay || '',
+        moneyCell(m.net)
+      ];
+    });
+    rows.push(['TOTAL','','','','','', moneyCell(f.misc)]);
     return {
-      cols: [{ h:'Metric' }, { h:'Value' }],
-      rows: [
-        ['Period', label],
-        ['Net takings', moneyCell(f.net)],
-        ['Transactions', f.txns],
-        ['Items sold', f.units],
-        ['Cash', moneyCell(f.pay.cash)],
-        ['Card', moneyCell(f.pay.card)],
-        ['Website', moneyCell(f.pay.web)],
-        ['Other', moneyCell(f.pay.other)],
-        ['Discounts', moneyCell(f.discounts)],
-        ['Refunds', moneyCell(f.refunds)]
-      ]
+      cols: [{ h:'Date' }, { h:'Time' }, { h:'Receipt' }, { h:'Type' }, { h:'For' },
+             { h:'Payment' }, { h:'Amount' }],
+      rows: rows
     };
   }
 
@@ -7523,6 +7677,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const sellers = zSellersTable(f);
     let csv = tableToCsv(summary.cols, summary.rows);
     csv += '\nTop sellers\n' + tableToCsv(sellers.cols, sellers.rows);
+    // Only written when there were any, so a shop that never takes a misc
+    // amount gets exactly the file it has always got.
+    if(f.miscLines && f.miscLines.length){
+      const misc = zMiscTable(f);
+      csv += '\nMiscellaneous\n' + tableToCsv(misc.cols, misc.rows);
+    }
     // the payouts heading goes in even when no maker sold anything in the
     // period, which is how this report has always come out
     if(p){
@@ -7540,6 +7700,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       { name:'Summary', cols: summary.cols, rows: summary.rows },
       { name:'Top sellers', cols: sellers.cols, rows: sellers.rows }
     ];
+    if(f.miscLines && f.miscLines.length){
+      const misc = zMiscTable(f);
+      sheets.push({ name:'Miscellaneous', cols: misc.cols, rows: misc.rows });
+    }
     if(p){
       const pay = payoutTable(p);
       sheets.push({ name:'Supplier payouts', cols: pay.cols, rows: pay.rows });
@@ -7567,10 +7731,23 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(f.pay.other){
       h += `<div class="report-cell" style="margin-bottom:8px;"><div class="rc-label">✨ Other payments</div><div class="rc-value">${money(f.pay.other)}</div></div>`;
     }
+    if(f.misc){
+      h += `<div class="report-cell" style="margin-bottom:8px;"><div class="rc-label">📝 Miscellaneous</div><div class="rc-value">${money(f.misc)}</div></div>`;
+    }
     if(top.length){
       h += `<div class="quick-sell-head" style="margin-top:6px;">Top sellers</div>`;
       h += top.map(t =>
         `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 2px;"><span>${escapeHtml(t.name)} ×${t.qty}</span><span>${money(t.net)}</span></div>`).join('');
+    }
+    if(f.miscLines.length){
+      h += `<div class="quick-sell-head" style="margin-top:6px;">Miscellaneous</div>`;
+      h += `<div class="folder-hint" style="margin-bottom:6px;">Money taken for something that was not stock. It is in the takings above, but not in items sold, and not in the supplier payouts — there is no supplier behind it.</div>`;
+      h += f.miscLines.map(m => {
+        // Written the way every other negative on this report is written, with
+        // the minus in front of the pound sign rather than after it.
+        const amt = m.net < 0 ? '−' + money(-m.net) : money(m.net);
+        return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 2px;"><span>${escapeHtml(m.name)}${m.kind==='refund'?' (refund)':''}</span><span>${amt}</span></div>`;
+      }).join('');
     }
     h += payoutBodyHtml(fromStr, toStr);
     if(f.txns===0 && f.refunds===0){

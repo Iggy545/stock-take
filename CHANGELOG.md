@@ -9,6 +9,52 @@ fixes.
 
 ---
 
+## v1.27.0 - 29 August 2026, 13:55
+
+### Added
+- **A misc amount can be charged for now: anything that was never stock.** A reading, a
+  workshop deposit, a repair, postage. Tap **📝 Misc amount** on the Till, put in the amount
+  and say what it is for, and it goes into the basket like an item. It is then paid for
+  exactly the way everything else is - cash, or **sent to the card reader with the rest of
+  the sale**, which is the point: there is no more taking the till total on one machine and
+  the reading on another.
+- **The description is not optional, and it is the whole reason this is safe to use.** It
+  goes on the customer's receipt, it is what the sale is called in the sold list, and it is
+  written out in full on the sales report and in the spreadsheet export. A sum of money on
+  the report that nobody can account for would be worse than not taking it here.
+- **Nothing comes off the shelf.** A misc amount was never on one, so the stock count does
+  not move, and the item does not have to exist. Refunding one puts nothing back either.
+- Two misc amounts in one sale stay two lines. They are different things, and folding them
+  together would throw one of the descriptions away.
+
+### Changed
+- **The sales report has a Miscellaneous section.** It lists every misc amount taken in the
+  period - date, receipt, what it was for, how it was paid - with a total. In the CSV and in
+  the spreadsheet it is a section of its own between *Top sellers* and *Supplier payouts*;
+  in the workbook it is a fourth sheet.
+- **Misc money counts in the takings but not in *Items sold*.** It never came off a shelf,
+  so counting it there would put the report at odds with the stock, and it has no business
+  in *Top sellers* either. The **Miscellaneous** figure in the summary is what reconciles
+  the two, and it only appears when there was any.
+- **Misc money is kept out of the supplier payouts.** There is no supplier behind a reading
+  or a deposit and there never can be, so leaving it in would inflate *Total to pay out* -
+  a figure somebody acts on with real money.
+- A shop that never takes a misc amount gets a byte-for-byte identical report file to the
+  one it has always had. All three additions are written only when there is something to
+  write.
+
+### Tests
+- `tests/misc-amount.js`, 67 checks. It slices five separate blocks out of `index.html` -
+  the basket line, set pricing and the totals, completing the sale, the report figures and
+  the supplier payouts - because the feature has to hold in five places that know nothing
+  about each other. `tests/sales-export.js` grew from 76 to 95, including a byte-for-byte
+  reference for the new report section and a four-sheet workbook.
+- Checked against ten deliberately broken copies, one per guard, and all ten were caught.
+  Two of them cover the same thing from either side - a misc line is kept out of a set
+  price twice over - so that pair has to be removed together before anything notices.
+
+---
+
 ## v1.26.0 - 29 August 2026, 12:08
 
 ### Added
