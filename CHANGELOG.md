@@ -9,6 +9,20 @@ fixes.
 
 ---
 
+## v1.28.0 - 29 August 2026, 15:20
+
+### Changed
+- **The website description box opens up when you tap into it.** On both the Add form and
+  the Edit item form it sits at three lines while you are looking past it, and grows to
+  about nine while the cursor is in it, so you can see what you have written without
+  scrolling a two-line window. It shrinks back on its own when you move to the next field.
+- In the Edit item form the box is inside a panel that scrolls, so when it grows the app
+  nudges it back into view - it will not open out of sight below the bottom of the panel.
+- Dragging the bottom-right corner still works and still wins: pull the box taller than it
+  opens to and it keeps that size, cursor in it or not.
+
+---
+
 ## v1.27.0 - 29 August 2026, 13:55
 
 ### Added

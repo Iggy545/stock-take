@@ -343,6 +343,18 @@
     display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;cursor:pointer;
   }
   .web-check input{width:19px;height:19px;margin:0;flex:none;}
+  /* The website description is the one field that wants real room to write in,
+     but a tall box on every form pushes everything else off the screen. So it
+     sits at three lines until it is tapped into, and opens up to about nine
+     while it has the cursor. Dragging the corner taller than that still wins -
+     the inline height the resize handle sets beats the min-height - so a box
+     pulled out big keeps its size after the cursor leaves it. */
+  .desc-ta{
+    width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+    font-size:14px;font-family:inherit;background:#fff;color:var(--ink);
+    resize:vertical;min-height:76px;transition:min-height .18s ease;
+  }
+  .desc-ta:focus{min-height:200px;}
 
   .value-summary{
     display:flex;justify-content:space-between;align-items:center;
@@ -611,6 +623,7 @@
   .fab:active{transform:scale(.95);}
   @media (prefers-reduced-motion: reduce){
     .modal-overlay,.modal-overlay .modal,.cart-line{animation:none;}
+    .desc-ta{transition:none;}
   }
 
   /* ---- Clean Modern theme ---- */
@@ -823,8 +836,7 @@
         </label>
         <div id="manualWebMore">
           <label>Description for the website (optional)</label>
-          <textarea id="manualWebDesc" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."
-            style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);resize:vertical;"></textarea>
+          <textarea id="manualWebDesc" class="desc-ta" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."></textarea>
         </div>
       </div>
 
@@ -1334,8 +1346,7 @@
       </label>
       <div id="editWebMore" style="display:none;">
         <label>Description for the website (optional)</label>
-        <textarea id="editWebDesc" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."
-          style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);resize:vertical;"></textarea>
+        <textarea id="editWebDesc" class="desc-ta" rows="3" placeholder="A longer description than the shop label — what it is, size, stone, who made it."></textarea>
       </div>
       <div class="state" id="editWebState"></div>
     </div>
@@ -3888,9 +3899,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.27.0';
+  const APP_VERSION = '1.28.0';
   const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '13:55';
+  const BUILD_TIME  = '15:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4464,6 +4475,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('editWebOn').addEventListener('change', () => {
     const it = items[currentEditBarcode];
     if(it) renderEditWebState(it);
+  });
+
+  // The description boxes grow when they are tapped into (see .desc-ta). In the
+  // edit form that box sits inside a modal that scrolls, so growing it can push
+  // its own bottom below the fold. Nudge it back into view once it has opened -
+  // 'nearest' means nothing moves if it already fits.
+  document.querySelectorAll('.desc-ta').forEach(ta => {
+    ta.addEventListener('focus', () => {
+      setTimeout(() => ta.scrollIntoView({ block:'nearest', behavior:'smooth' }), 220);
+    });
   });
 
   document.getElementById('webBanner').addEventListener('click', openWebTodo);
