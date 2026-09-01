@@ -494,6 +494,26 @@
     color:var(--danger);font-size:13px;font-weight:600;cursor:pointer;
   }
 
+  /* The extra photographs on the edit form. Buttons, not drag and drop: this
+     is used on an iPad, where dragging a small thumbnail is fiddly and easy to
+     do by accident. contain, not cover, for the same reason the website shows
+     the whole picture - a thumbnail that crops is a thumbnail that lies about
+     what it opens. */
+  .extras-strip{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .extras-strip:empty{display:none;}
+  .extra-pic{
+    width:88px;border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;background:#fff;
+  }
+  .extra-pic img{display:block;width:100%;height:72px;object-fit:contain;background:var(--paper);}
+  .extra-tools{display:flex;border-top:1px solid var(--line);}
+  .extra-tools button{
+    flex:1;padding:6px 0;background:transparent;border:0;border-right:1px solid var(--line);
+    font-size:13px;line-height:1;cursor:pointer;color:var(--ink);
+  }
+  .extra-tools button:last-child{border-right:0;color:var(--danger);}
+  .extra-tools button:disabled{opacity:.3;cursor:default;}
+
   /* thumbnails in the lists */
   .row-main{display:flex;align-items:center;gap:12px;min-width:0;}
   .thumb{
@@ -979,6 +999,8 @@
       <input type="file" id="restoreInput" accept="application/json,.json" style="display:none;">
       <button class="btn btn-secondary" id="importItemsBtn" style="width:100%;margin-top:8px;">⤒ Import items (JSON)</button>
       <input type="file" id="importItemsInput" accept="application/json,.json" style="display:none;">
+      <button class="btn btn-secondary" id="exportExtrasBtn" style="width:100%;margin-top:8px;">🖼 Export extra photos</button>
+      <div class="storage-note" id="extrasNote"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Team sync</div>
@@ -1448,6 +1470,16 @@
     <input type="file" id="editPhotoInput" accept="image/*" style="display:none;">
     <div class="photo-preview" id="editPhotoPreview" style="display:none;"></div>
     <button class="btn-remove-photo" id="editPhotoRemove" type="button" style="display:none;">Remove photo</button>
+
+    <!-- The extra photographs. Saved the moment they are taken rather than on
+         Save, because they are not part of the record - and because losing a
+         photograph to a mis-tapped Cancel would be a poor trade for tidiness.
+         The hint says so, so it is not a surprise. -->
+    <label>More photos for the website (optional)</label>
+    <div class="extras-strip" id="editExtras"></div>
+    <button class="btn-generate photo-btn" type="button" id="editExtraAdd">📷 Add another photo</button>
+    <input type="file" id="editExtraInput" accept="image/*" style="display:none;">
+    <div class="folder-hint" id="editExtrasHint"></div>
 
     <label>Counted so far (this stock take)</label>
     <input type="number" id="editItemCounted" inputmode="numeric">
@@ -4029,9 +4061,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.34.0';
-  const BUILD_DATE  = '29 Aug 2026';
-  const BUILD_TIME  = '22:45';
+  const APP_VERSION = '1.35.0';
+  const BUILD_DATE  = '1 Sept 2026';
+  const BUILD_TIME  = '14:58';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4056,27 +4088,66 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
      bundles them, so nothing else changes. If IndexedDB isn't usable (very old
      browser or a locked-down private mode) we safely fall back to the old
      localStorage behaviour so no photo is ever lost. */
+  // TWO STORES, and they are keyed differently on purpose.
+  //
+  //   photos  keyed by BARCODE. One picture per item -- the card image, the one
+  //           that travels in the record and reaches the website by itself.
+  //   extras  keyed by FINGERPRINT. The second and later photographs. The value
+  //           carries its own item code, so a picture always knows what it
+  //           belongs to without asking the record.
+  //
+  // That second point is the whole reason it is not keyed by barcode. Two tills
+  // can photograph the same item, and applyRemoteItem replaces a record whole
+  // rather than merging it -- so anything about the extras that lived on the
+  // record could be overwritten by the other device. Nothing about them is on
+  // the record at all, and the pictures cannot be orphaned by a sync.
+  //
+  // Database version 2. Version 1 had only `photos`, and an upgrade adds the
+  // second store without touching it.
   var PhotoDB = (function(){
-    var DB='stockTakePhotos', STORE='photos', dbp=null;
+    var DB='stockTakePhotos', STORE='photos', EXTRAS='extras', dbp=null;
     function open(){
       if(dbp) return dbp;
       dbp = new Promise(function(res,rej){
         try{
-          var r = indexedDB.open(DB, 1);
-          r.onupgradeneeded = function(){ try{ r.result.createObjectStore(STORE); }catch(e){} };
+          var r = indexedDB.open(DB, 2);
+          r.onupgradeneeded = function(){
+            var db = r.result;
+            try{ if(!db.objectStoreNames.contains(STORE))  db.createObjectStore(STORE); }catch(e){}
+            try{ if(!db.objectStoreNames.contains(EXTRAS)) db.createObjectStore(EXTRAS); }catch(e){}
+          };
           r.onsuccess = function(){ res(r.result); };
           r.onerror   = function(){ rej(r.error); };
         }catch(e){ rej(e); }
       });
       return dbp;
     }
-    function store(mode){ return open().then(function(db){ return db.transaction(STORE, mode).objectStore(STORE); }); }
+    function store(mode, name){ return open().then(function(db){ var n=name||STORE; return db.transaction(n, mode).objectStore(n); }); }
+    function get(st, k){ return new Promise(function(res){ var r=st.get(k); r.onsuccess=function(){res(r.result==null?null:r.result);}; r.onerror=function(){res(null);}; }); }
+    function put(st, k, v){ return new Promise(function(res,rej){ var r=st.put(v,k); r.onsuccess=function(){res(true);}; r.onerror=function(){rej(r.error);}; }); }
+    function del(st, k){ return new Promise(function(res){ var r=st.delete(k); r.onsuccess=function(){res(true);}; r.onerror=function(){res(false);}; }); }
+    function keys(st){ return new Promise(function(res){ var r=st.getAllKeys? st.getAllKeys() : null; if(!r){res([]);return;} r.onsuccess=function(){res(r.result||[]);}; r.onerror=function(){res([]);}; }); }
     return {
       supported:function(){ try{ return typeof indexedDB!=='undefined' && !!indexedDB; }catch(e){ return false; } },
-      get:function(k){ return store('readonly').then(function(st){ return new Promise(function(res){ var r=st.get(k); r.onsuccess=function(){res(r.result||null);}; r.onerror=function(){res(null);}; }); }); },
-      set:function(k,v){ return store('readwrite').then(function(st){ return new Promise(function(res,rej){ var r=st.put(v,k); r.onsuccess=function(){res(true);}; r.onerror=function(){rej(r.error);}; }); }); },
-      del:function(k){ return store('readwrite').then(function(st){ return new Promise(function(res){ var r=st.delete(k); r.onsuccess=function(){res(true);}; r.onerror=function(){res(false);}; }); }); },
-      keys:function(){ return store('readonly').then(function(st){ return new Promise(function(res){ var r=st.getAllKeys? st.getAllKeys() : null; if(!r){res([]);return;} r.onsuccess=function(){res(r.result||[]);}; r.onerror=function(){res([]);}; }); }); }
+      get:function(k){ return store('readonly').then(function(st){ return get(st,k); }); },
+      set:function(k,v){ return store('readwrite').then(function(st){ return put(st,k,v); }); },
+      del:function(k){ return store('readwrite').then(function(st){ return del(st,k); }); },
+      keys:function(){ return store('readonly').then(function(st){ return keys(st); }); },
+      // The extras store. Values are {code, data, at, n} -- see addExtra().
+      xget:function(k){ return store('readonly','extras').then(function(st){ return get(st,k); }); },
+      xset:function(k,v){ return store('readwrite','extras').then(function(st){ return put(st,k,v); }); },
+      xdel:function(k){ return store('readwrite','extras').then(function(st){ return del(st,k); }); },
+      xkeys:function(){ return store('readonly','extras').then(function(st){ return keys(st); }); },
+      xall:function(){ return store('readonly','extras').then(function(st){
+        return new Promise(function(res){
+          var r = st.getAll ? st.getAll() : null, k = st.getAllKeys ? st.getAllKeys() : null;
+          if(!r || !k){ res([]); return; }
+          var vals=null, ks=null;
+          function done(){ if(vals&&ks) res(ks.map(function(key,i){ return { key:key, val:vals[i] }; })); }
+          r.onsuccess=function(){ vals=r.result||[]; done(); }; r.onerror=function(){ res([]); };
+          k.onsuccess=function(){ ks=k.result||[];  done(); }; k.onerror=function(){ res([]); };
+        });
+      }); }
     };
   })();
 
@@ -4238,6 +4309,167 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
   }
 
+  // ---- the extra photographs: 2 to 6 an item, on this device only ----
+  //
+  // WHY THEY DO NOT SYNC. pushItems() writes the whole record, and a till pulls
+  // EVERY item document whenever it reconnects after a change -- 1.68 MB across
+  // 483 items today. Six photographs on a record is about 700 KB, so that same
+  // routine pull would be roughly 140 MB, on an iPad, on shop wifi. Firestore's
+  // 1 MiB document limit would never even be reached; the shop would simply
+  // find the till slow. So extras stay on the device that took them until they
+  // are exported, and reach the website through tools/photo-import.py.
+  //
+  // NOTHING ABOUT THEM IS ON THE ITEM RECORD, deliberately. applyRemoteItem
+  // replaces a record whole rather than merging it, so a list kept there could
+  // be overwritten by the other till and its pictures orphaned. Each picture
+  // carries its own item code instead, so it always knows what it belongs to.
+  //
+  // THE KEY IS BARCODE + FINGERPRINT, not the fingerprint alone. Content
+  // addressing would store one copy of a picture used twice -- which is right
+  // for bytes and wrong here, because the record has to say which ITEM it
+  // belongs to and two items cannot share one answer. It is also exactly the
+  // name the archive uses on disk.
+  //
+  // THE ACCEPTED RISK: until it is exported, this device is the only copy.
+  // Safari clears storage for sites unused for about a week, so a till in daily
+  // use is never at risk but a closed shop is. That is what the un-exported
+  // count in Settings is for -- it turns a silent loss into a visible chore.
+  var EXTRA_MAX = 6;             // the shop's own working ceiling, not a limit of anything
+  var extrasIndex = {};          // barcode -> [fingerprint, ...] in the order shown
+  var extrasAt = {};             // barcode#fingerprint -> when it was taken
+  var extrasBytes = 0;
+  var extrasStoreOK = false;
+  var EXPORTED_KEY = 'stockTakeExtrasExportedAt';
+
+  function extraKey(code, fp){ return String(code) + '#' + String(fp); }
+  function extrasFor(code){ return (extrasIndex[code] || []).slice(); }
+  function extrasTotal(){
+    return Object.keys(extrasIndex).reduce(function(n, c){ return n + extrasIndex[c].length; }, 0);
+  }
+  function extrasItems(){
+    return Object.keys(extrasIndex).filter(function(c){ return extrasIndex[c].length; }).length;
+  }
+
+  // Rebuild the index from what the store holds. Position is written on each
+  // record as `n` because this runs at every startup, and the order the shop
+  // put the pictures in would not survive being read back otherwise.
+  function buildExtrasIndex(rows){
+    var by = {};
+    (rows || []).forEach(function(row){
+      var v = row && row.val;
+      if(!v || !v.code || !v.data) return;
+      (by[v.code] = by[v.code] || []).push({
+        fp: String(v.fp || String(row.key).split('#')[1] || ''),
+        n: Number(v.n) || 0, at: Number(v.at) || 0
+      });
+    });
+    var index = {}, at = {};
+    Object.keys(by).forEach(function(code){
+      by[code].sort(function(a, b){ return (a.n - b.n) || (a.at - b.at); });
+      var kept = by[code].filter(function(x){ return x.fp; });
+      if(!kept.length) return;
+      index[code] = kept.map(function(x){ return x.fp; });
+      kept.forEach(function(x){ at[extraKey(code, x.fp)] = x.at; });
+    });
+    return { index: index, at: at };
+  }
+
+  // Positions are rewritten for the whole item, not just the moved picture, so
+  // the stored order can never disagree with the one on screen.
+  function persistExtraOrder(code){
+    var list = extrasIndex[code] || [];
+    return Promise.all(list.map(function(fp, i){
+      return PhotoDB.xget(extraKey(code, fp)).then(function(v){
+        if(!v) return null;
+        v.n = i;
+        return PhotoDB.xset(extraKey(code, fp), v);
+      }).catch(function(){ return null; });
+    }));
+  }
+
+  async function addExtra(code, dataUri){
+    if(!extrasStoreOK) throw new Error('extra photographs are not available on this device');
+    var uri = String(dataUri || '');
+    if(uri.indexOf('data:image/') !== 0) throw new Error('that is not a picture');
+    var fp = photoFingerprint(uri);
+    var list = extrasIndex[code] || (extrasIndex[code] = []);
+    if(list.indexOf(fp) > -1) return { fp: fp, already: true };
+    var now = Date.now();
+    await PhotoDB.xset(extraKey(code, fp),
+      { code: code, fp: fp, data: uri, at: now, n: list.length });
+    list.push(fp);
+    extrasAt[extraKey(code, fp)] = now;
+    extrasBytes += uri.length;
+    return { fp: fp, already: false };
+  }
+
+  async function removeExtra(code, fp){
+    var list = extrasIndex[code] || [];
+    var at = list.indexOf(fp);
+    if(at < 0) return false;
+    var held = await PhotoDB.xget(extraKey(code, fp)).catch(function(){ return null; });
+    await PhotoDB.xdel(extraKey(code, fp));
+    list.splice(at, 1);
+    delete extrasAt[extraKey(code, fp)];
+    if(!list.length) delete extrasIndex[code];
+    if(held && held.data) extrasBytes -= held.data.length;
+    await persistExtraOrder(code);
+    return true;
+  }
+
+  // delta is -1 or +1. Moving the first one left, or the last one right, is not
+  // an error -- it simply does nothing, so a button never needs disabling.
+  async function moveExtra(code, fp, delta){
+    var list = extrasIndex[code] || [];
+    var at = list.indexOf(fp), to = at + delta;
+    if(at < 0 || to < 0 || to >= list.length) return false;
+    list.splice(to, 0, list.splice(at, 1)[0]);
+    await persistExtraOrder(code);
+    return true;
+  }
+
+  // The file the PC picks up. Ordered per item, and it carries EVERYTHING this
+  // device holds rather than only what is new: tools/photo-import.py skips by
+  // fingerprint what the archive already has, so there is no export state here
+  // to get wrong. State the till has to maintain is state the till can get
+  // wrong -- that is the hasPhoto lesson.
+  async function buildExtrasExport(){
+    var out = {}, codes = Object.keys(extrasIndex).sort();
+    for(var i = 0; i < codes.length; i++){
+      var code = codes[i], list = extrasIndex[code], pics = [];
+      for(var j = 0; j < list.length; j++){
+        var v = await PhotoDB.xget(extraKey(code, list[j])).catch(function(){ return null; });
+        if(v && v.data) pics.push(v.data);
+      }
+      if(pics.length) out[code] = pics;
+    }
+    return out;
+  }
+
+  // How many pictures are not yet known to be on the PC.
+  //
+  // If the stamp is missing -- a new device, cleared storage, a browser that
+  // lost localStorage -- `since` is 0 and EVERY picture counts as un-exported.
+  // That over-warns rather than under-warns, which is the only safe direction:
+  // the cost of a wrong warning is one unnecessary export, and the cost of a
+  // wrong reassurance is a lost afternoon's photography.
+  function extrasUnexported(){
+    var since = 0;
+    try{ since = Number(localStorage.getItem(EXPORTED_KEY)) || 0; }catch(e){}
+    var n = 0;
+    Object.keys(extrasIndex).forEach(function(code){
+      extrasIndex[code].forEach(function(fp){
+        if((extrasAt[extraKey(code, fp)] || 0) > since) n++;
+      });
+    });
+    return n;
+  }
+
+  function markExtrasExported(){
+    try{ localStorage.setItem(EXPORTED_KEY, String(Date.now())); }catch(e){}
+  }
+  // ---- end of the extra photographs ----
+
   // Bring photos into IndexedDB and out of localStorage. Runs once at startup.
   // Also migrates photos saved the old way, and hydrates photos back into memory.
   async function initPhotos(){
@@ -4270,6 +4502,23 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           if(!have[b]){ try{ await PhotoDB.set(b, items[b].photo); }catch(e){} }
         }
       }
+      // The extra photographs. Read whole, because the index has to know the
+      // order the shop put them in and that is stored on each record. They are
+      // NOT hydrated onto items -- nothing about them touches the record.
+      // A failure here must not cost the main photos, which are already safe by
+      // this point, so it has its own catch.
+      try{
+        var rows = await PhotoDB.xall();
+        var built = buildExtrasIndex(rows);
+        extrasIndex = built.index;
+        extrasAt = built.at;
+        extrasBytes = rows.reduce(function(n, r){
+          return n + ((r && r.val && r.val.data) ? r.val.data.length : 0);
+        }, 0);
+        extrasStoreOK = true;
+      }catch(e){ extrasStoreOK = false; }
+      try{ renderExtrasNote(); }catch(e){}
+
       // Re-save items (now stripped) and refresh the screen with photos in place.
       saveItems();
       renderList(document.getElementById('searchBox') ? document.getElementById('searchBox').value : '');
@@ -5962,6 +6211,176 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   const manualPhoto = setupPhotoField('manualPhotoInput', 'manualPhotoPreview', 'manualPhotoRemove');
   const newPhoto    = setupPhotoField('newPhotoInput',    'newPhotoPreview',    'newPhotoRemove');
   const editPhoto   = setupPhotoField('editPhotoInput',   'editPhotoPreview',   'editPhotoRemove');
+
+  // ---- the extras strip on the edit form ----
+  //
+  // Buttons rather than drag and drop, on purpose: this runs on an iPad, where
+  // dragging a small thumbnail is fiddly and easy to do by accident.
+  //
+  // EVERY ACTION WRITES IMMEDIATELY, unlike the photo field above, which stages
+  // its value until Save. Extras are not part of the record, so there is
+  // nothing for Save to save -- and losing a photograph to a mis-tapped Cancel
+  // would be a poor trade for consistency. The hint under the strip says so.
+  function extraBtn(label, title, disabled, fn){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    if(disabled) b.disabled = true; else b.addEventListener('click', fn);
+    return b;
+  }
+
+  function renderEditExtras(){
+    const code  = currentEditBarcode;
+    const strip = document.getElementById('editExtras');
+    const hint  = document.getElementById('editExtrasHint');
+    const add   = document.getElementById('editExtraAdd');
+    if(!strip || !hint || !add) return;
+    strip.innerHTML = '';
+
+    if(!extrasStoreOK){
+      add.style.display = 'none';
+      hint.textContent = 'This device cannot store extra photographs.';
+      return;
+    }
+
+    const list = extrasFor(code);
+    list.forEach(function(fp, i){
+      const cell = document.createElement('div');
+      cell.className = 'extra-pic';
+      const img = document.createElement('img');
+      img.alt = '';
+      // Set as a property, never through innerHTML - same rule as everywhere
+      // else in this file. The picture is read back out of the store because
+      // the index holds fingerprints, not the pictures themselves.
+      PhotoDB.xget(extraKey(code, fp)).then(function(v){
+        if(v && v.data && currentEditBarcode === code) img.src = v.data;
+      }).catch(function(){});
+      cell.appendChild(img);
+
+      const tools = document.createElement('div');
+      tools.className = 'extra-tools';
+      tools.appendChild(extraBtn('◀', 'Move this photo earlier', i === 0, function(){
+        moveExtra(code, fp, -1).then(renderEditExtras);
+      }));
+      tools.appendChild(extraBtn('▶', 'Move this photo later', i === list.length - 1, function(){
+        moveExtra(code, fp, +1).then(renderEditExtras);
+      }));
+      tools.appendChild(extraBtn('✕', 'Remove this photo', false, function(){
+        // Worth a confirm, and worth saying why: this really is the only copy.
+        if(!confirm('Remove this photograph?\n\nIt is only on this device, so it cannot be got back.')) return;
+        removeExtra(code, fp).then(function(){ renderEditExtras(); renderExtrasNote(); });
+      }));
+      cell.appendChild(tools);
+      strip.appendChild(cell);
+    });
+
+    const full = list.length >= EXTRA_MAX;
+    add.style.display = full ? 'none' : '';
+    hint.textContent = full
+      ? 'That is the ' + EXTRA_MAX + ' this item can show. Remove one to add another.'
+      : (list.length
+          ? list.length + ' extra photo' + (list.length === 1 ? '' : 's') + ', shown on the '
+            + 'website under the main one. Saved as you take them, and they stay on this '
+            + 'device until you export them in Settings.'
+          : 'The website shows these under the main photograph. They stay on this device '
+            + 'until you export them in Settings.');
+  }
+
+  document.getElementById('editExtraAdd').addEventListener('click', function(){
+    document.getElementById('editExtraInput').click();
+  });
+
+  document.getElementById('editExtraInput').addEventListener('change', async function(e){
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';                       // so the same picture can be picked again
+    if(!file || !currentEditBarcode) return;
+    const code = currentEditBarcode;
+    try{
+      // The same 640px/q0.8 conversion the main photograph gets, so the archive
+      // and the website see one consistent size.
+      const uri = await fileToThumbnail(file);
+      const r = await addExtra(code, uri);
+      if(currentEditBarcode === code) renderEditExtras();
+      renderExtrasNote();
+      showToast(r.already ? 'That photograph is already on this item' : 'Photo added', r.already ? 'error' : 'success');
+    }catch(err){
+      showToast(err && err.message ? err.message : 'Could not use that image', 'error');
+    }
+  });
+
+  // The Settings line. It is the ONLY warning that this device holds the only
+  // copy of these pictures, so it says the outstanding number plainly rather
+  // than tucking it behind a total.
+  function renderExtrasNote(){
+    const el = document.getElementById('extrasNote');
+    if(!el) return;
+    if(!extrasStoreOK){ el.textContent = ''; return; }
+    const total = extrasTotal(), onItems = extrasItems(), waiting = extrasUnexported();
+    if(!total){ el.textContent = 'No extra photographs on this device.'; return; }
+    el.textContent = total + ' extra photo' + (total === 1 ? '' : 's') + ' on '
+      + onItems + ' item' + (onItems === 1 ? '' : 's') + '. '
+      + (waiting
+          ? waiting + ' not exported yet — until you do, this device is the only copy.'
+          : 'All exported.');
+  }
+
+  // Everything this device holds, not only what is new. tools/photo-import.py
+  // skips by fingerprint what the archive already has, so there is no export
+  // state kept here to get wrong -- state the till has to maintain is state the
+  // till can get wrong, which is the hasPhoto lesson.
+  //
+  // Shared through the iOS sheet where there is one, exactly as the backup is,
+  // so on an iPad this goes straight into Google Drive or Files in one tap.
+  document.getElementById('exportExtrasBtn').addEventListener('click', async function(){
+    const btn = this, was = btn.textContent;
+    if(!extrasStoreOK){ showToast('This device cannot store extra photographs', 'error'); return; }
+    if(!extrasTotal()){ showToast('There are no extra photographs on this device', 'error'); return; }
+    btn.disabled = true; btn.textContent = 'Preparing…';
+    try{
+      const extras = await buildExtrasExport();
+      const pics = Object.keys(extras).reduce((n, c) => n + extras[c].length, 0);
+      const body = JSON.stringify({
+        kind: 'extra-photos',
+        at: new Date().toISOString(),
+        items: Object.keys(extras).length,
+        photos: pics,
+        extras: extras
+      });
+      const filename = `extra-photos-${new Date().toISOString().slice(0,10)}.json`;
+      const blob = new Blob([body], { type: 'application/json' });
+      const file = new File([blob], filename, { type: 'application/json' });
+
+      let sent = false;
+      if(canShareFiles(file)){
+        try{
+          await navigator.share({ files: [file], title: 'Extra photos',
+            text: `${pics} extra photo${pics===1?'':'s'} on ${Object.keys(extras).length} item${Object.keys(extras).length===1?'':'s'}` });
+          sent = true;
+        }catch(e){
+          // Cancelling the sheet is not an error, but it is also NOT an export -
+          // marking it done here would tell the shop these pictures are safe on
+          // the PC when they never left the iPad.
+          if(e && e.name === 'AbortError'){ showToast('Export cancelled', 'error'); return; }
+        }
+      }
+      if(!sent){
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      markExtrasExported();
+      renderExtrasNote();
+      showToast(`Exported ${pics} photo${pics===1?'':'s'}`, 'success');
+    }catch(err){
+      showToast('Could not build the export', 'error');
+    }finally{
+      btn.disabled = false; btn.textContent = was;
+    }
+  });
 
   /* ===================== POS: till, checkout, receipts =====================
      The old one-tap "record a sale" flow grew into a proper till: items are
@@ -10397,6 +10816,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       })();
     }
     document.getElementById('editItemCounted').value = it.counted || 0;
+    // Not staged like the photo above: extras are already saved, so this just
+    // draws what this device holds for the item being opened.
+    renderEditExtras();
 
     document.getElementById('editWebOn').checked = !!it.web;
     document.getElementById('editWebDesc').value = it.webDesc || '';

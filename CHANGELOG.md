@@ -9,6 +9,34 @@ fixes.
 
 ---
 
+## v1.35.0 - 1 September 2026, 14:58
+
+**More than one photograph per item.** Edit item now has *More photos for the website*
+underneath the existing photo. Take up to six; they show on the product page as a row of
+thumbnails under the main picture, and the shop can reorder or remove them.
+
+**These photographs stay on the device that took them until you export them.** They are
+not in Team sync and they are not in a backup, and that is deliberate: a till pulls every
+item record whenever it reconnects after a change, so photographs travelling with the
+records would turn a 1.7 MB catch-up into something nearer 140 MB on shop wifi.
+
+- **Settings -> Export extra photos** writes one file, shared through the normal iOS sheet,
+  so on an iPad it goes straight into Google Drive or Files. The PC picks it up with
+  `tools/photo-tidy.py --extras`.
+- **Settings says how many are not exported yet**, and says plainly that until they are,
+  that device is the only copy. If it has no record of an export it counts every one, which
+  over-warns rather than under-warns.
+- **EVERY iPad that takes extra photographs has to export.** Exporting on one does not
+  cover another, because the pictures never leave the device that took them.
+- The main photograph is completely unchanged: still taken here, still synced, still on the
+  website by itself within 15-30 minutes.
+- Extras are saved the moment they are taken, not on Save, so a mis-tapped Cancel cannot
+  lose one. The form says so.
+- The photo store moves to version 2. Existing photographs are untouched -- proven by
+  loading this build onto a version 1 database and reading the photograph back.
+
+---
+
 ## v1.34.0 - 29 August 2026, 22:45
 
 ### Added

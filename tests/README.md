@@ -40,6 +40,7 @@ Each prints a pass/fail line per check and exits non-zero on failure.
 | `web-sold-alert.js` | The flash that sends somebody to the shelves when a web sale arrives from another till: what raises one and what must never, the recency window that stops a reconnect replaying the shop's whole history, and being told the same order twice. From v1.31.0 also the single-till path — a web order rung through here going onto the same list, and not landing twice when it comes back round over sync | v1.30.0, single till v1.31.0 |
 | `payouts.js` | The supplier payout maths, which somebody hands real money out from: the shop's own commission on top of the card and website fees, that it follows refunds down while the card fee deliberately does not, a supplier on their own terms (a zero meaning zero, not "use the shop rate"), and every part shown on the report adding up to the total | v1.34.0 |
 | `variant-names.js` | The em dash that groups an item's colours into one card on the website: that the till splits a name exactly the way `shop-site/shop.js` does, that a hyphen is never silently promoted to a group, and that a name survives the round trip | v1.23.0 |
+| `extras.js` | The second and later photographs of an item, which live ONLY on the device that took them: that the store key names the item as well as the picture (so two items photographing the same thing do not become one), that the order the shop chose survives a restart, that removing one closes the gap permanently, and that with no export ever recorded the un-exported count reports EVERY picture rather than none | v1.35.0 |
 
 ## If a test stops finding the code
 
@@ -55,3 +56,21 @@ one of its own checks useless that way — it passed for the wrong reason until 
 was sharpened — which is the whole argument for doing it. A test that has never failed has
 not been shown to work. `git show HEAD~1:index.html > /tmp/before.html` and run against
 that.
+
+`extras.js` was checked against six broken copies: the store keyed by the picture alone,
+the order not written back, the un-exported count treating a missing stamp as "nothing
+outstanding", the rebuild sorting by time instead of position, `addExtra` accepting
+anything, and an emptied item left behind as an empty list. All six produce FAIL lines.
+
+Two of them are worth knowing about. The first is the key: keyed by fingerprint only,
+photographing two items with the same picture silently moves the first item's photograph
+onto the second, and nothing looks wrong. The second is the count: it is the ONLY warning
+that a device holds the only copy of these pictures, so a missing stamp has to mean
+"everything is outstanding". Over-warning costs one needless export; under-warning costs
+an afternoon's photography.
+
+The suite also caught two faults in itself before it was believed. It looked records up by
+a hand-written `code#fingerprint` key, so the broken key scheme crashed the run instead of
+failing a check; and it asked `extrasItems()` whether an emptied item had been dropped,
+which filters empties out and so could never tell. Both are fixed, and only then did all
+six copies fail.
