@@ -9,6 +9,49 @@ fixes.
 
 ---
 
+## v1.39.0 - 2 September 2026, 18:22
+
+**A set can carry a photograph of its own.**
+
+The picture of the things together is the only picture that shows what a set price
+actually buys. There was nowhere to put one, so the website borrowed the first
+member's — fine while the shop put one pair shot on both barcodes, wrong the moment
+each item gets its own photograph.
+
+The "Sold as a set" box on the edit form now has **📷 Add a photo of the set**, with
+the same preview and Remove as the item's own. It appears once a partner is picked,
+because until then there is no set to photograph. Taking a set apart deletes its
+photograph — there is no rule left for it to belong to.
+
+**Where the picture goes, which is the whole of the design.**
+
+- The bytes go in `setPhoto`, a field of its own, and into a THIRD IndexedDB store,
+  `setphotos`, keyed by the barcode that owns the rule. Its own store rather than a
+  suffixed key in `photos`: a mistake in here must not be able to reach the item
+  photographs, which the backups are now the only index of. Database version 3; an
+  upgrade adds the store and touches neither of the other two.
+- Only the KEY goes inside the rule, as `set.photoKey` — a URL, or `data:` and a
+  fingerprint. `shop-worker` projects `data.set` WHOLE on every catalogue rebuild,
+  about ten times a day, so a picture in there would cost exactly what `data.photo`
+  used to cost before v1.24.0 and nothing would look wrong. See SHARED.md.
+- `hasSetPhoto` and `setPhotoCleared` do the same job for it that `hasPhoto` and
+  `photoCleared` do for an item's: an empty field means "the picture has not come
+  out of IndexedDB yet", never "there is no picture", except when someone has
+  actually pressed Remove.
+
+It syncs like an item photograph, so a set photographed on the iPad reaches the
+other tills. Five sets at about 97KB each is roughly half a megabyte added to a
+full pull; worth watching if the shop ever runs dozens of sets.
+
+The website half is already published: `shop-worker` serves it at
+`/photo/:id?set=1` and `shop-site` v0.6.1 shows it, falling back to borrowing a
+member's picture exactly as before when a set has none.
+
+`tests/set-photos.js` is new — 25 checks, verified against six broken copies. The
+till suite is now 18 files.
+
+---
+
 ## v1.38.0 - 2 September 2026, 17:20
 
 **A set can now hold up to four items, not just two.** Some things on the shelf only make

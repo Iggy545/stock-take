@@ -1515,6 +1515,17 @@
           <option value="">— and nothing else —</option>
         </select>
         <input type="number" id="editSetPrice" inputmode="decimal" step="0.01" min="0" placeholder="Price for the set (£)" style="display:none;">
+        <!-- The picture of the things TOGETHER. It belongs to the rule, not to
+             either item: each of them has its own photograph, and neither of
+             those shows what the set price actually buys. Only drawn once a
+             partner is picked, alongside the price, because until then there
+             is no set to photograph. -->
+        <div id="editSetPhotoBox" style="display:none;">
+          <div class="photo-preview" id="editSetPhotoPreview" style="display:none;"></div>
+          <button class="btn-remove-photo" id="editSetPhotoRemove" type="button" style="display:none;">Remove photo</button>
+          <button class="btn-generate photo-btn" type="button" onclick="document.getElementById('editSetPhotoInput').click()">📷 Add a photo of the set</button>
+          <input type="file" id="editSetPhotoInput" accept="image/*" style="display:none;">
+        </div>
         <div class="set-sum" id="editSetSummary">
           Pick the item this one is sold with — up to three more — then give the price for
           them together. When they are all in the basket the till applies it on its own.
@@ -4067,9 +4078,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.38.0';
+  const APP_VERSION = '1.39.0';
   const BUILD_DATE  = '2 Sept 2026';
-  const BUILD_TIME  = '17:20';
+  const BUILD_TIME  = '18:22';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4083,6 +4094,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   let html5QrCode = null;
   let currentEditBarcode = null;
   let editPhotoWasSet = false;   // did the edit form open with a photo showing?
+  let editSetPhotoWasSet = false;   // and the same question for the set's own
   let pendingScanBarcode = null;
   let activeTab = 'list'; // scanning behaves differently on the Sold tab
 
@@ -4111,16 +4123,22 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // Database version 2. Version 1 had only `photos`, and an upgrade adds the
   // second store without touching it.
   var PhotoDB = (function(){
-    var DB='stockTakePhotos', STORE='photos', EXTRAS='extras', dbp=null;
+    var DB='stockTakePhotos', STORE='photos', EXTRAS='extras', SETS='setphotos', dbp=null;
     function open(){
       if(dbp) return dbp;
       dbp = new Promise(function(res,rej){
         try{
-          var r = indexedDB.open(DB, 2);
+          var r = indexedDB.open(DB, 3);
           r.onupgradeneeded = function(){
             var db = r.result;
             try{ if(!db.objectStoreNames.contains(STORE))  db.createObjectStore(STORE); }catch(e){}
             try{ if(!db.objectStoreNames.contains(EXTRAS)) db.createObjectStore(EXTRAS); }catch(e){}
+            // Version 3. A SET's photograph -- the picture of the two or three
+            // things together. Its own store rather than a suffixed key in
+            // `photos`, deliberately: a mistake in here must not be able to
+            // reach the item photographs, which the backups are now the only
+            // index of. Keyed by the barcode of the item that OWNS the rule.
+            try{ if(!db.objectStoreNames.contains(SETS))   db.createObjectStore(SETS); }catch(e){}
           };
           r.onsuccess = function(){ res(r.result); };
           r.onerror   = function(){ rej(r.error); };
@@ -4144,6 +4162,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       xset:function(k,v){ return store('readwrite','extras').then(function(st){ return put(st,k,v); }); },
       xdel:function(k){ return store('readwrite','extras').then(function(st){ return del(st,k); }); },
       xkeys:function(){ return store('readonly','extras').then(function(st){ return keys(st); }); },
+      // The set photographs. Same shape as the main store above -- one picture
+      // per barcode, and it travels on the record the way an item's does.
+      sget:function(k){ return store('readonly','setphotos').then(function(st){ return get(st,k); }); },
+      sset:function(k,v){ return store('readwrite','setphotos').then(function(st){ return put(st,k,v); }); },
+      sdel:function(k){ return store('readwrite','setphotos').then(function(st){ return del(st,k); }); },
+      skeys:function(){ return store('readonly','setphotos').then(function(st){ return keys(st); }); },
       xall:function(){ return store('readonly','extras').then(function(st){
         return new Promise(function(res){
           var r = st.getAll ? st.getAll() : null, k = st.getAllKeys ? st.getAllKeys() : null;
@@ -4158,7 +4182,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   })();
 
   var photoStoreOK = false;   // set true once IndexedDB is confirmed writable
+  // Its own flag. The set store is added in database version 3, so a device that
+  // has not upgraded yet, or one where the extra store fails to open, keeps every
+  // item photograph working and simply has no set pictures.
+  var setPhotoStoreOK = false;
   var photoCache = {};        // barcode -> photo string currently held in IndexedDB
+  // barcode -> the SET photograph held for the item that owns that rule. No byte
+  // accounting beside it on purpose: there are a handful of sets against 480-odd
+  // items, so it would be a number that never moved and one more thing to keep
+  // right. The storage note counts the item photographs, which are the ones that
+  // can actually fill a device.
+  var setPhotoCache = {};
   var photoBytes = 0;         // approx total size of photos, for the usage note
   function _plen(s){ return s ? s.length : 0; }
 
@@ -4253,6 +4287,49 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return '';
   }
 
+  // The same job for a set's photograph, and it needs the same care for the same
+  // reason: an item with no `setPhoto` in memory is usually one whose picture has
+  // not come back out of IndexedDB yet, not one without a picture. `hasSetPhoto`
+  // is the marker that tells those apart, and `setPhotoCleared` is the one case
+  // where empty really does mean somebody pressed Remove.
+  //
+  // Kept apart from reconcilePhotos rather than folded into it. The two walk the
+  // same items and read almost the same way, but one of them is looking after the
+  // item photographs, and those are the pictures the shop cannot get back.
+  function reconcileSetPhotos(){
+    if(!setPhotoStoreOK) return;
+    Object.keys(items).forEach(function(bc){
+      var it = items[bc];
+      if(!it) return;
+      var p = it.setPhoto || '';
+      if(!p && !it.setPhotoCleared && setPhotoCache[bc]){
+        it.setPhoto = setPhotoCache[bc];   // put it back rather than lose it
+        return;
+      }
+      if(setPhotoCache[bc] !== p){
+        if(p){
+          setPhotoCache[bc]=p;
+          if(it.setPhotoCleared) delete it.setPhotoCleared;
+          PhotoDB.sset(bc, p).catch(function(){});
+        }
+        else if(it.setPhotoCleared){
+          delete setPhotoCache[bc];
+          delete it.hasSetPhoto;
+          PhotoDB.sdel(bc).catch(function(){});
+        }
+      }
+    });
+    // An item that has gone, or one that is no longer the owner of a set, has no
+    // business keeping a picture of one.
+    Object.keys(setPhotoCache).forEach(function(bc){
+      var it = items[bc];
+      if(it && it.set) return;
+      delete setPhotoCache[bc];
+      if(it){ delete it.setPhoto; delete it.hasSetPhoto; }
+      PhotoDB.sdel(bc).catch(function(){});
+    });
+  }
+
   // Keep every item's key agreeing with its photo. Called from saveItems, so it
   // runs on every change to the stock -- a sale, an edit, a record arriving over
   // sync -- and no caller has to remember it.
@@ -4277,16 +4354,36 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
+  // And the same for the key inside a set rule. This one is what the website
+  // reads: shop-worker projects `data.set` WHOLE on every catalogue build, so
+  // the key lives in there and the picture never does. Writing the picture into
+  // the rule would put 97KB on the wire ten times a day and nothing would look
+  // wrong -- see the note above photoKeyFor, and SHARED.md.
+  function reconcileSetPhotoKeys(){
+    Object.keys(items).forEach(function(bc){
+      var it = items[bc];
+      if(!it || !it.set) return;
+      if(it.setPhoto){
+        var k = photoKeyFor(it.setPhoto);
+        if(k) it.set.photoKey = k; else delete it.set.photoKey;
+        return;
+      }
+      if(it.hasSetPhoto && !it.setPhotoCleared) return;   // not loaded yet
+      delete it.set.photoKey;
+    });
+  }
+
   // A copy of items with photos removed, for localStorage (keeps it small).
   function strippedForStorage(){
     if(!photoStoreOK) return items;   // fallback: keep photos inline as before
     var out={};
     Object.keys(items).forEach(function(bc){
       var it=items[bc], c={};
-      for(var k in it){ if(k!=='photo') c[k]=it[k]; }
+      for(var k in it){ if(k!=='photo' && k!=='setPhoto') c[k]=it[k]; }
       // Remember a photo exists until it hydrates — and clear the marker when it
       // doesn't, or a removed photo leaves behind a note saying one is missing.
       if(it.photo) c.hasPhoto=1; else delete c.hasPhoto;
+      if(it.setPhoto) c.hasSetPhoto=1; else delete c.hasSetPhoto;
       out[bc]=c;
     });
     return out;
@@ -4302,6 +4399,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     try{
       reconcilePhotos();
       reconcilePhotoKeys();
+      reconcileSetPhotos();
+      reconcileSetPhotoKeys();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(strippedForStorage()));
       // Every change to the stock passes through here — a sale, a refund, an
       // edit, a record arriving over sync — so this is the one place that keeps
@@ -4508,6 +4607,33 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           if(!have[b]){ try{ await PhotoDB.set(b, items[b].photo); }catch(e){} }
         }
       }
+      // The set photographs. Its own pass with its own catch, after the item
+      // pictures above are already in hand: a failure here must cost nothing
+      // but the set pictures.
+      try{
+        var skeys = await PhotoDB.skeys();
+        var shave = {}; skeys.forEach(function(k){ shave[k]=1; });
+        for(var si=0; si<skeys.length; si++){
+          var sbc = skeys[si];
+          if(items[sbc] && !items[sbc].setPhoto){
+            var sp = await PhotoDB.sget(sbc);
+            if(sp) items[sbc].setPhoto = sp;
+          }
+        }
+        setPhotoCache={};
+        var sbcs = Object.keys(items);
+        for(var sj=0; sj<sbcs.length; sj++){
+          var sb = sbcs[sj];
+          if(items[sb] && items[sb].setPhoto){
+            setPhotoCache[sb] = items[sb].setPhoto;
+            // A picture that arrived over sync and has never been written down
+            // here yet. Same migration the item photographs get above.
+            if(!shave[sb]){ try{ await PhotoDB.sset(sb, items[sb].setPhoto); }catch(e){} }
+          }
+        }
+        setPhotoStoreOK = true;
+      }catch(e){ setPhotoStoreOK = false; }
+
       // The extra photographs. Read whole, because the index has to know the
       // order the shop put them in and that is stored on each record. They are
       // NOT hydrated onto items -- nothing about them touches the record.
@@ -6231,6 +6357,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   const manualPhoto = setupPhotoField('manualPhotoInput', 'manualPhotoPreview', 'manualPhotoRemove');
   const newPhoto    = setupPhotoField('newPhotoInput',    'newPhotoPreview',    'newPhotoRemove');
   const editPhoto   = setupPhotoField('editPhotoInput',   'editPhotoPreview',   'editPhotoRemove');
+  const editSetPhoto = setupPhotoField('editSetPhotoInput', 'editSetPhotoPreview', 'editSetPhotoRemove');
 
   // ---- the extras strip on the edit form ----
   //
@@ -10894,6 +11021,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const priceEl = document.getElementById('editSetPrice');
     const sumEl = document.getElementById('editSetSummary');
     priceEl.style.display = partners.length ? 'block' : 'none';
+    document.getElementById('editSetPhotoBox').style.display = partners.length ? 'block' : 'none';
     if(!partners.length){
       sumEl.textContent = 'Pick the item this one is sold with — up to three more — then give the '
                         + 'price for them together. When they are all in the basket the till applies '
@@ -10988,6 +11116,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       edEl.style.display = 'block';
       fillSetPartnerOptions(barcode, owned ? owned.with.slice() : []);
       document.getElementById('editSetPrice').value = owned ? owned.price : '';
+      editSetPhoto.set(it.setPhoto || '');
+      editSetPhotoWasSet = !!it.setPhoto;
       refreshSetEditor();
     }
 
@@ -11075,6 +11205,21 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(webDesc) it.webDesc = webDesc; else delete it.webDesc;
     if(newSet) it.set = newSet;
     else if(clearSet) delete it.set;
+
+    // The set's photograph, written the same way as the item's: the picture on
+    // the record for reconcileSetPhotos to put away, and `setPhotoCleared` so a
+    // deliberate Remove is never mistaken for a picture that did not travel.
+    //
+    // A set that has just been taken apart takes its photograph with it. There
+    // is no rule left for it to belong to, and leaving it would put a picture of
+    // two things back on screen the next time somebody made a different set.
+    if(it.set){
+      if(editSetPhoto.value){ it.setPhoto = editSetPhoto.value; delete it.setPhotoCleared; }
+      else if(editSetPhotoWasSet){ it.setPhotoCleared = 1; it.setPhoto = ''; }
+    } else if(it.setPhoto || editSetPhotoWasSet){
+      it.setPhotoCleared = 1;
+      it.setPhoto = '';
+    }
     saveItems();
     document.getElementById('editItemModal').style.display = 'none';
     renderList(document.getElementById('searchBox').value);
