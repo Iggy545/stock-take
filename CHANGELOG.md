@@ -9,6 +9,37 @@ fixes.
 
 ---
 
+## v1.38.0 - 2 September 2026, 17:20
+
+**A set can now hold up to four items, not just two.** Some things on the shelf only make
+sense sold together as a three or a four — a bracelet, earrings and a necklace — and until
+now **Sold as a set** on the item screen would only take one other item, so those had to be
+rung up at full price and discounted by hand.
+
+Pick the first item as before and a second drop-down appears under it; fill that one and a
+third appears. Three partners is the limit, so a set is at most four items including the one
+you are editing. Each drop-down stops offering whatever the others have already taken, so the
+same thing cannot go into a set twice, and clearing one clears the ones under it. The line
+underneath adds them all up as you go — *Apart: £100.00 (£20.00 + £30.00 + £50.00)* — and still
+refuses a set price that is not actually a saving.
+
+At the till nothing looks different, it just counts further: **every** member has to be in the
+basket before the price applies, taking any one of them back out puts the full prices back,
+and the saving is shared out across all the members in proportion to what each one costs — so
+each maker's payout carries its own share of it rather than one of them absorbing the lot.
+An item can still only be in one set at a time, and the till says which set is already using
+it if you try.
+
+Everything downstream of the till — the website's set picker, the supplier payouts, the
+reports — was already written to count the members rather than assume two, so none of it
+needed changing. Sets already set up as pairs carry on exactly as they were.
+
+*Also: `tests/sets.js`, 42 new checks covering three- and four-item sets — the matching, the
+all-or-nothing rule, the way the saving is split, and two overlapping sets always resolving
+the same way.*
+
+---
+
 ## v1.36.0 - 2 September 2026, 02:21
 
 **Undo last sale will no longer delete a card sale.** The money for a card payment is with

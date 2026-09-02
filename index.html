@@ -1508,10 +1508,16 @@
         <select id="editSetWith">
           <option value="">Not part of a set</option>
         </select>
-        <input type="number" id="editSetPrice" inputmode="decimal" step="0.01" min="0" placeholder="Price for the pair (£)" style="display:none;">
+        <select id="editSetWith2" style="display:none;">
+          <option value="">— and nothing else —</option>
+        </select>
+        <select id="editSetWith3" style="display:none;">
+          <option value="">— and nothing else —</option>
+        </select>
+        <input type="number" id="editSetPrice" inputmode="decimal" step="0.01" min="0" placeholder="Price for the set (£)" style="display:none;">
         <div class="set-sum" id="editSetSummary">
-          Pick the item this one is sold with, then give the price for the two together.
-          When both are in the basket the till applies it on its own.
+          Pick the item this one is sold with — up to three more — then give the price for
+          them together. When they are all in the basket the till applies it on its own.
         </div>
       </div>
     </div>
@@ -4061,9 +4067,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.37.0';
+  const APP_VERSION = '1.38.0';
   const BUILD_DATE  = '2 Sept 2026';
-  const BUILD_TIME  = '12:05';
+  const BUILD_TIME  = '17:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -6563,11 +6569,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   /* =================== end misc amounts =================== */
 
   // ---- Set pricing ----
-  // Two items that cost less bought together than bought apart. The rule lives
-  // on ONE of the two items, as it.set = { with:['OTHERBARCODE'], price: 25 },
-  // because items are the only thing that syncs between tills -- a separate
-  // list of rules would have to be retyped on every device, the way promo
-  // codes are now.
+  // Items that cost less bought together than bought apart: two of them, or up
+  // to four. The rule lives on ONE of them, as it.set = { with:['OTHER','MORE'],
+  // price: 25 }, because items are the only thing that syncs between tills -- a
+  // separate list of rules would have to be retyped on every device, the way
+  // promo codes are now. Everything below counts the members rather than
+  // assuming two, and always did; only the editor was ever limited to a pair.
   //
   // Nothing is detected at scan time. The basket is re-matched on every change
   // in cartFigures(), so a set applies however the items got there (scanned,
@@ -10824,48 +10831,97 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // The rule is defined on one of the two items. Open the other one and you get
   // a read-only note pointing back at it, rather than a second box that could
   // disagree with the first.
+  //
+  // A set runs to four items: this one and up to three partners. The extra
+  // slots appear one at a time as the one above them is filled, so a plain pair
+  // still looks like a single drop-down and nothing else.
+  const SET_MAX_MEMBERS = 4;
+
+  function setWithEls(){
+    return ['editSetWith','editSetWith2','editSetWith3'].map(id => document.getElementById(id));
+  }
+
+  // What the slots say now, in slot order, blanks and repeats dropped.
+  function chosenSetPartners(){
+    const out = [];
+    setWithEls().forEach(el => {
+      const v = el.value;
+      if(v && out.indexOf(v) === -1) out.push(v);
+    });
+    return out;
+  }
+
+  // Slot n+1 only exists once slot n holds something, and clearing a slot
+  // empties the ones under it: a partner left hanging below a blank one is a
+  // set whose shape the person filling it in cannot see.
+  function showSetSlots(){
+    const els = setWithEls();
+    let open = true;
+    els.forEach((el,k) => {
+      if(k === 0) return;
+      open = open && !!els[k-1].value;
+      if(!open) el.value = '';
+      el.style.display = open ? 'block' : 'none';
+    });
+  }
+
+  // Fill every slot. A slot offers everything except this item and whatever the
+  // OTHER slots already hold, so nothing can go into a set twice.
   function fillSetPartnerOptions(selfBc, selected){
-    const sel = document.getElementById('editSetWith');
-    const opts = Object.keys(items)
-      .filter(bc => bc !== selfBc)
-      .sort((a,b) => items[a].name.localeCompare(items[b].name))
-      .map(bc => {
-        const price = Number(items[bc].price)||0;
-        const label = items[bc].name + (price>0 ? ' — ' + money(price) : '');
-        return '<option value="' + escapeAttr(bc) + '">' + escapeHtml(label) + '</option>';
-      }).join('');
-    sel.innerHTML = '<option value="">Not part of a set</option>' + opts;
-    sel.value = selected || '';
-    if(selected && sel.value !== selected) sel.value = '';   // partner has gone
+    const picked = (selected || []).filter(bc => bc && bc !== selfBc && items[bc]);
+    setWithEls().forEach((el, k) => {
+      const mine = picked[k] || '';
+      const taken = picked.filter((bc,j) => j !== k);
+      const opts = Object.keys(items)
+        .filter(bc => bc !== selfBc && taken.indexOf(bc) === -1)
+        .sort((a,b) => items[a].name.localeCompare(items[b].name))
+        .map(bc => {
+          const price = Number(items[bc].price)||0;
+          const label = items[bc].name + (price>0 ? ' — ' + money(price) : '');
+          return '<option value="' + escapeAttr(bc) + '">' + escapeHtml(label) + '</option>';
+        }).join('');
+      el.innerHTML = '<option value="">' + (k===0 ? 'Not part of a set' : '— and nothing else —')
+                   + '</option>' + opts;
+      el.value = mine;
+      if(mine && el.value !== mine) el.value = '';   // partner has gone
+    });
+    showSetSlots();
   }
 
   function refreshSetEditor(){
-    const withBc = document.getElementById('editSetWith').value;
+    showSetSlots();
+    const partners = chosenSetPartners();
     const priceEl = document.getElementById('editSetPrice');
     const sumEl = document.getElementById('editSetSummary');
-    priceEl.style.display = withBc ? 'block' : 'none';
-    if(!withBc){
-      sumEl.textContent = 'Pick the item this one is sold with, then give the price for the two together. '
-                        + 'When both are in the basket the till applies it on its own.';
+    priceEl.style.display = partners.length ? 'block' : 'none';
+    if(!partners.length){
+      sumEl.textContent = 'Pick the item this one is sold with — up to three more — then give the '
+                        + 'price for them together. When they are all in the basket the till applies '
+                        + 'it on its own.';
       return;
     }
     // Use the price being typed in this modal, not the saved one -- they may be
     // changing both at once.
     const mine  = parseFloat(document.getElementById('editItemPrice').value) || 0;
-    const other = Number(items[withBc] ? items[withBc].price : 0) || 0;
-    const full  = round2(mine + other);
+    const each  = [mine].concat(partners.map(bc => Number(items[bc] ? items[bc].price : 0) || 0));
+    const full  = round2(each.reduce((t,p) => t + p, 0));
     const setP  = parseFloat(priceEl.value);
-    let msg = 'Apart: ' + money(full) + ' (' + money(mine) + ' + ' + money(other) + ').';
+    let msg = 'Apart: ' + money(full) + ' (' + each.map(p => money(p)).join(' + ') + ').';
     if(setP > 0){
       if(setP >= full) msg += ' A set price of ' + money(setP) + ' is not a saving, so the till would ignore it.';
       else msg += ' Together: ' + money(setP) + ' — saving ' + money(round2(full - setP)) + '.';
     } else {
-      msg += ' Enter what the two cost together.';
+      msg += ' Enter what the ' + each.length + ' cost together.';
     }
     sumEl.textContent = msg;
   }
 
-  document.getElementById('editSetWith').addEventListener('change', refreshSetEditor);
+  // Changing one slot re-fills them all, so the others stop offering whatever
+  // it has just taken.
+  setWithEls().forEach(el => el.addEventListener('change', () => {
+    fillSetPartnerOptions(currentEditBarcode, chosenSetPartners());
+    refreshSetEditor();
+  }));
   document.getElementById('editSetPrice').addEventListener('input', refreshSetEditor);
   document.getElementById('editItemPrice').addEventListener('input', refreshSetEditor);
 
@@ -10930,7 +10986,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     } else {
       noteEl.style.display = 'none';
       edEl.style.display = 'block';
-      fillSetPartnerOptions(barcode, owned ? owned.with[0] : '');
+      fillSetPartnerOptions(barcode, owned ? owned.with.slice() : []);
       document.getElementById('editSetPrice').value = owned ? owned.price : '';
       refreshSetEditor();
     }
@@ -10954,23 +11010,43 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     let newSet = null, clearSet = false;
     const setEditorOpen = document.getElementById('editSetEditor').style.display !== 'none';
     if(setEditorOpen){
-      const withBc = document.getElementById('editSetWith').value;
-      if(!withBc){ clearSet = true; }
+      const partners = chosenSetPartners();
+      if(!partners.length){ clearSet = true; }
+      else if(partners.length > SET_MAX_MEMBERS - 1){
+        showToast('A set can hold ' + SET_MAX_MEMBERS + ' items at most', 'error');
+        return;
+      }
       else {
+        const gone = partners.find(bc => !items[bc]);
+        if(gone){
+          showToast('One of the items in this set is no longer in stock — pick it again', 'error');
+          return;
+        }
         const setP = parseFloat(document.getElementById('editSetPrice').value);
         const mine = parseFloat(document.getElementById('editItemPrice').value) || 0;
-        const full = round2(mine + (Number(items[withBc] ? items[withBc].price : 0) || 0));
-        if(!(setP > 0)){ showToast('Give the price for the two together', 'error'); return; }
+        const full = round2(partners.reduce((t,bc) => t + (Number(items[bc].price)||0), mine));
+        if(!(setP > 0)){
+          showToast('Give the price for the ' + (partners.length+1) + ' together', 'error');
+          return;
+        }
         if(setP >= full){
-          showToast('A set price has to be under ' + money(full) + ' — what the two cost apart', 'error');
+          showToast('A set price has to be under ' + money(full) + ' — what they cost apart', 'error');
           return;
         }
-        const clash = setRules().find(r => r.owner !== currentEditBarcode && r.members.indexOf(withBc) !== -1);
+        // Every partner has to be free, not just the first: a set that took an
+        // item out of somebody else's rule would quietly break that one.
+        const rules = setRules();
+        let clash = null;
+        partners.forEach(bc => {
+          if(clash) return;
+          const r = rules.find(r => r.owner !== currentEditBarcode && r.members.indexOf(bc) !== -1);
+          if(r) clash = { bc: bc, rule: r };
+        });
         if(clash){
-          showToast(items[withBc].name + ' is already in a set (' + setRuleName(clash) + ')', 'error');
+          showToast(items[clash.bc].name + ' is already in a set (' + setRuleName(clash.rule) + ')', 'error');
           return;
         }
-        newSet = { with: [withBc], price: round2(setP) };
+        newSet = { with: partners, price: round2(setP) };
       }
     }
 
