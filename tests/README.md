@@ -22,6 +22,7 @@ node tests/web-sold-alert.js index.html
 node tests/payouts.js index.html
 node tests/undo-guard.js index.html
 node tests/sets.js index.html
+node tests/roles.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -80,3 +81,4 @@ a hand-written `code#fingerprint` key, so the broken key scheme crashed the run 
 failing a check; and it asked `extrasItems()` whether an emptied item had been dropped,
 which filters empties out and so could never tell. Both are fixed, and only then did all
 six copies fail.
+| `roles.js` | The three access levels: that an old bare-name staff list all comes back as **administrator**, that the gate stays off until a staff PIN is set, that nobody-picked is the most restricted rather than the least, and which tabs each role may stand on | v1.41.0 |

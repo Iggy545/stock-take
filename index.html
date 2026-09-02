@@ -1064,6 +1064,12 @@
         <button class="btn-generate" id="staffAddBtn" style="margin-bottom:0;">＋ Add</button>
       </div>
       <div class="folder-hint" style="margin-top:8px;">Whoever is picked on the till gets their name recorded on every sale they ring up.</div>
+      <div class="quick-sell-head" style="margin-top:14px;">Who can see what</div>
+      <div class="barcode-generate-row" style="margin-top:8px;">
+        <input type="password" inputmode="numeric" id="staffPinInput" placeholder="Staff PIN" autocomplete="off">
+        <button class="btn-generate" id="staffPinSaveBtn" style="margin-bottom:0;">Save</button>
+      </div>
+      <div class="folder-hint" id="staffPinHint" style="margin-top:8px;"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Item codes</div>
@@ -1314,6 +1320,21 @@
     </p>
     <div id="staffPickList"></div>
     <button class="btn btn-secondary" id="staffModalClose">Close</button>
+  </div>
+</div>
+
+<!-- PIN gate: asked when somebody picks a name that reaches more than the till.
+     Deterrence, not a security boundary - see the note beside ROLES in the script. -->
+<div class="modal-overlay" id="pinModal" style="display:none;">
+  <div class="modal">
+    <h2>&#128274; Enter the staff PIN</h2>
+    <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
+      This name reaches more than the till. Ask an administrator if you do not
+      have it. It is not the Team PIN further down Settings.
+    </p>
+    <input type="password" inputmode="numeric" id="pinInput" placeholder="Staff PIN" autocomplete="off" style="width:100%;margin-bottom:10px;">
+    <button class="btn btn-primary" id="pinOkBtn" style="margin-bottom:8px;">Unlock</button>
+    <button class="btn btn-secondary" id="pinCancelBtn">Cancel</button>
   </div>
 </div>
 
@@ -4091,9 +4112,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.40.0';
-  const BUILD_DATE  = '2 Sept 2026';
-  const BUILD_TIME  = '22:53';
+  const APP_VERSION = '1.41.0';
+  const BUILD_DATE  = '3 Sept 2026';
+  const BUILD_TIME  = '00:45';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7163,19 +7184,99 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // this device; the name stamped on each sale travels through sync/backups.
   const STAFF_KEY = 'stockTakeStaff';
   const STAFF_CUR_KEY = 'stockTakeStaffCurrent';
+  const STAFF_PIN_KEY = 'stockTakeStaffPin';
+
+  /* ---- Staff roles -------------------------------------------------------
+     Three levels, and THIS TABLE IS THE WHOLE POLICY: the tabs a role may
+     reach. `tabs:null` means everything, which is what an administrator gets.
+     Moving a tab between roles is a one-line change here rather than a hunt
+     through the handlers.
+
+     THIS IS NOT A SECURITY BOUNDARY and must never be described as one. Every
+     device syncs the whole workspace, so the sales and stock behind a hidden
+     tab are still in localStorage on that device and still come out in a
+     backup. What it buys is that payout figures and Settings are not on screen
+     in front of customers, and that somebody on the till cannot wander into
+     Settings and undo something by accident.
+
+     The gate is OFF until a PIN is set, so a shop that never sets one keeps
+     exactly the app it had before. */
+  const ROLES = {
+    admin:    { label: 'Administrator', tabs: null,                   guarded: true,
+                hint: 'Everything, including Settings and the sales report.' },
+    supplier: { label: 'Supplier',      tabs: ['till','sold','list'], guarded: true,
+                hint: 'Till, Sales and the stock list. No Add, no Settings, no report.' },
+    till:     { label: 'Till operator', tabs: ['till','sold'],        guarded: false,
+                hint: 'Till and Sales only. No payout figures.' },
+  };
+  const ROLE_ORDER = ['admin','supplier','till'];
+  const DEFAULT_ROLE = 'till';
+
   let staff = [];
   try{ staff = JSON.parse(localStorage.getItem(STAFF_KEY)) || []; }catch(e){ staff = []; }
+  /* Staff used to be a bare array of names. Every one of those becomes an
+     ADMINISTRATOR, because anything else would lock the person turning this on
+     out of their own Settings the moment the page reloaded. */
+  staff = (Array.isArray(staff) ? staff : []).map(function(s){
+    if(typeof s === 'string') return { name: s, role: 'admin' };
+    if(s && typeof s.name === 'string') return { name: s.name, role: ROLES[s.role] ? s.role : 'admin' };
+    return null;
+  }).filter(Boolean);
+
   function saveStaff(){ try{ localStorage.setItem(STAFF_KEY, JSON.stringify(staff)); }catch(e){} }
+  function staffIndex(name){ for(var i=0;i<staff.length;i++){ if(staff[i].name === name) return i; } return -1; }
+  function roleOf(name){ const i = staffIndex(name); return i < 0 ? DEFAULT_ROLE : staff[i].role; }
+  function adminCount(){ return staff.filter(function(s){ return s.role === 'admin'; }).length; }
+  function staffPin(){ try{ return localStorage.getItem(STAFF_PIN_KEY) || ''; }catch(e){ return ''; } }
+  /* No PIN, or nobody on the list, means the gate is off altogether - otherwise
+     a fresh device would open with no way into Settings to set itself up. */
+  function rolesActive(){ return !!staffPin() && staff.length > 0; }
   function currentStaff(){
     try{
       const c = localStorage.getItem(STAFF_CUR_KEY) || '';
-      return staff.indexOf(c) >= 0 ? c : '';
+      return staffIndex(c) >= 0 ? c : '';
     }catch(e){ return ''; }
+  }
+  /* Nobody picked is the MOST restricted, not the least. Otherwise tapping the
+     name away at the top of the screen would be the way round all of this. */
+  function currentRole(){
+    if(!rolesActive()) return 'admin';
+    const cur = currentStaff();
+    return cur ? roleOf(cur) : DEFAULT_ROLE;
+  }
+  function roleAllows(role, tab){
+    const t = (ROLES[role] || ROLES[DEFAULT_ROLE]).tabs;
+    return !t || t.indexOf(tab) >= 0;
+  }
+  function applyRole(){
+    const role = currentRole();
+    document.querySelectorAll('.tab').forEach(function(t){
+      t.style.display = roleAllows(role, t.dataset.tab) ? '' : 'none';
+    });
+    /* The report is the only payout figure reachable from a tab a till operator
+       keeps, so it is hidden on its own rather than by taking Sales away. */
+    const z = document.getElementById('zReportBtn');
+    if(z) z.style.display = (role === 'admin') ? '' : 'none';
+    if(!roleAllows(role, activeTab)){
+      const t = document.querySelector('.tab[data-tab="till"]');
+      if(t) t.click();
+    }
   }
   function setCurrentStaff(name){
     try{ localStorage.setItem(STAFF_CUR_KEY, name); }catch(e){}
     renderStaffUi();
+    applyRole();
   }
+  /* ---- PIN prompt ---- */
+  let pinPending = null;
+  function askPin(onOk){
+    pinPending = onOk;
+    const i = document.getElementById('pinInput');
+    i.value = '';
+    document.getElementById('pinModal').style.display = 'flex';
+    setTimeout(function(){ try{ i.focus(); }catch(e){} }, 50);
+  }
+  function closePin(){ document.getElementById('pinModal').style.display = 'none'; pinPending = null; }
   function renderStaffUi(){
     const btn = document.getElementById('staffBtn');
     const cur = currentStaff();
@@ -7186,33 +7287,82 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       btn.style.display = 'none';
     }
     const listEl = document.getElementById('staffList');
-    listEl.innerHTML = staff.length ? staff.map(n => `
-      <div class="promo-row">
-        <div class="promo-code" style="flex:1;min-width:0;">${escapeHtml(n)}${n===cur ? ' <span style="font-size:11px;color:var(--moss-dark);">— on the till</span>' : ''}</div>
-        <div class="promo-actions"><button type="button" class="pr-del" data-staffdel="${escapeAttr(n)}">✕</button></div>
-      </div>`).join('')
-      : '<div class="empty-state" style="padding:14px;">No staff yet — sales are not attributed to anyone.</div>';
-    listEl.querySelectorAll('[data-staffdel]').forEach(b => b.addEventListener('click', () => {
-      const n = b.dataset.staffdel;
-      askConfirm('Remove ' + n + '?', 'Past sales keep the name — it just stops being offered on the till.', 'Remove', () => {
-        staff = staff.filter(x => x !== n);
+    listEl.innerHTML = staff.length ? staff.map(function(s){
+      const opts = ROLE_ORDER.map(function(r){
+        return '<option value="' + r + '"' + (s.role===r ? ' selected' : '') + '>' + ROLES[r].label + '</option>';
+      }).join('');
+      return '<div class="promo-row">'
+        + '<div class="promo-code" style="flex:1;min-width:0;">' + escapeHtml(s.name)
+        + (s.name===cur ? ' <span style="font-size:11px;color:var(--moss-dark);">on the till</span>' : '')
+        + '</div>'
+        + '<select data-staffrole="' + escapeAttr(s.name) + '" style="font-size:12px;max-width:132px;">' + opts + '</select>'
+        + '<div class="promo-actions"><button type="button" class="pr-del" data-staffdel="' + escapeAttr(s.name) + '">&#10005;</button></div>'
+        + '</div>';
+    }).join('')
+      : '<div class="empty-state" style="padding:14px;">No staff yet, so sales are not attributed to anyone.</div>';
+    listEl.querySelectorAll('[data-staffrole]').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        const i = staffIndex(sel.dataset.staffrole);
+        if(i < 0) return;
+        const was = staff[i].role;
+        staff[i].role = ROLES[sel.value] ? sel.value : DEFAULT_ROLE;
+        /* Never leave a live gate with nobody who can reach Settings. */
+        if(rolesActive() && adminCount() === 0){
+          staff[i].role = was;
+          showToast('Somebody has to stay an administrator', 'error');
+        } else {
+          saveStaff();
+          showToast(staff[i].name + ' is now ' + ROLES[staff[i].role].label.toLowerCase(), 'success');
+        }
+        renderStaffUi();
+        applyRole();
+      });
+    });
+    listEl.querySelectorAll('[data-staffdel]').forEach(function(b){ b.addEventListener('click', function(){
+      const nm = b.dataset.staffdel;
+      askConfirm('Remove ' + nm + '?', 'Past sales keep the name. It just stops being offered on the till.', 'Remove', function(){
+        if(rolesActive() && roleOf(nm) === 'admin' && adminCount() === 1){
+          showToast('That is the only administrator', 'error');
+          return;
+        }
+        staff = staff.filter(function(x){ return x.name !== nm; });
         saveStaff();
         renderStaffUi();
-        showToast(n + ' removed', 'success');
+        applyRole();
+        showToast(nm + ' removed', 'success');
       });
-    }));
+    }); });
+    const pinHint = document.getElementById('staffPinHint');
+    if(pinHint){
+      pinHint.innerHTML = rolesActive()
+        ? 'Roles are <b>on</b>.<br>' + ROLE_ORDER.map(function(r){
+            return '<b>' + ROLES[r].label + '</b> &ndash; ' + ROLES[r].hint; }).join('<br>')
+          + '<br><br>Save a blank PIN to turn roles off again. This hides screens; it does not hide the data behind them, and a backup still holds everything.'
+        : 'Roles are <b>off</b> &ndash; everybody sees everything, exactly as before. Set a staff PIN to turn them on; it is asked for whenever somebody picks a name above till operator. This is <b>not</b> the Team PIN further down, which is about syncing.';
+    }
   }
   function openStaffModal(){
     if(!staff.length) return;
     const listEl = document.getElementById('staffPickList');
     const cur = currentStaff();
-    listEl.innerHTML = staff.map(n => `
-      <button type="button" class="btn ${n===cur ? 'btn-primary' : 'btn-secondary'}" style="width:100%;margin-bottom:8px;" data-staffpick="${escapeAttr(n)}">${n===cur ? '✓ ' : ''}${escapeHtml(n)}</button>`).join('');
-    listEl.querySelectorAll('[data-staffpick]').forEach(b => b.addEventListener('click', () => {
-      setCurrentStaff(b.dataset.staffpick);
-      document.getElementById('staffModal').style.display = 'none';
-      showToast(b.dataset.staffpick + ' is on the till', 'success');
-    }));
+    listEl.innerHTML = staff.map(function(s){
+      const lock = (rolesActive() && ROLES[s.role] && ROLES[s.role].guarded) ? ' &#128274;' : '';
+      return '<button type="button" class="btn ' + (s.name===cur ? 'btn-primary' : 'btn-secondary')
+        + '" style="width:100%;margin-bottom:8px;" data-staffpick="' + escapeAttr(s.name) + '">'
+        + (s.name===cur ? '&#10003; ' : '') + escapeHtml(s.name) + lock + '</button>';
+    }).join('');
+    listEl.querySelectorAll('[data-staffpick]').forEach(function(b){ b.addEventListener('click', function(){
+      const nm = b.dataset.staffpick;
+      const go = function(){
+        setCurrentStaff(nm);
+        document.getElementById('staffModal').style.display = 'none';
+        showToast(nm + ' is on the till', 'success');
+      };
+      /* A guarded role has to prove itself. A till operator never sees a PIN,
+         which is the whole point: the common case is unchanged. */
+      if(rolesActive() && ROLES[roleOf(nm)] && ROLES[roleOf(nm)].guarded) askPin(go);
+      else go();
+    }); });
     document.getElementById('staffModal').style.display = 'flex';
   }
   document.getElementById('staffBtn').addEventListener('click', openStaffModal);
@@ -7225,8 +7375,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('staffAddBtn').addEventListener('click', () => {
     const n = document.getElementById('staffNameInput').value.trim();
     if(!n){ showToast('Type a name first', 'error'); return; }
-    if(staff.indexOf(n) >= 0){ showToast(n + ' is already on the list', 'error'); return; }
-    staff.push(n);
+    if(staffIndex(n) >= 0){ showToast(n + ' is already on the list', 'error'); return; }
+    /* The very first person on a bare device is an administrator, or there
+       would be nobody able to reach Settings to set anything up. */
+    staff.push({ name: n, role: staff.length ? DEFAULT_ROLE : 'admin' });
     saveStaff();
     document.getElementById('staffNameInput').value = '';
     if(staff.length === 1) setCurrentStaff(n);   // first person added is on the till
@@ -7236,7 +7388,35 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   document.getElementById('staffNameInput').addEventListener('keydown', (e) => {
     if(e.key === 'Enter') document.getElementById('staffAddBtn').click();
   });
+  document.getElementById('pinOkBtn').addEventListener('click', () => {
+    const v = document.getElementById('pinInput').value.trim();
+    if(v && v === staffPin()){ const f = pinPending; closePin(); if(f) f(); }
+    else showToast('That staff PIN is not right', 'error');
+  });
+  document.getElementById('pinInput').addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') document.getElementById('pinOkBtn').click();
+  });
+  document.getElementById('pinCancelBtn').addEventListener('click', closePin);
+  document.getElementById('pinModal').addEventListener('click', (e) => {
+    if(e.target === e.currentTarget) closePin();
+  });
+  document.getElementById('staffPinSaveBtn').addEventListener('click', () => {
+    const v = document.getElementById('staffPinInput').value.trim();
+    /* Turning the gate on with nobody able to reach Settings would lock the
+       shop out of its own till until somebody cleared the browser. */
+    if(v && !adminCount()){ showToast('Make somebody an administrator first', 'error'); return; }
+    try{
+      if(v) localStorage.setItem(STAFF_PIN_KEY, v); else localStorage.removeItem(STAFF_PIN_KEY);
+    }catch(e){}
+    document.getElementById('staffPinInput').value = '';
+    renderStaffUi();
+    applyRole();
+    showToast(v ? 'Staff PIN set, roles are on' : 'Staff PIN cleared, roles are off', 'success');
+  });
   renderStaffUi();
+  /* After the tabs have their handlers, so a role that cannot stand on the tab
+     the app opens with can be moved off it. */
+  setTimeout(applyRole, 0);
   // Opening the app with staff set up but nobody picked? Ask straight away.
   if(staff.length && !currentStaff()) setTimeout(openStaffModal, 600);
 

@@ -9,6 +9,53 @@ fixes.
 
 ---
 
+## v1.41.0 - 3 September 2026, 00:50
+
+**Three levels of access, so payout figures are not on screen in front of customers.**
+
+Staff records now carry a role, and the role decides which tabs are on screen:
+
+| | Stock | Till | Sales | Add | Settings | Report |
+|---|---|---|---|---|---|---|
+| Administrator | yes | yes | yes | yes | yes | yes |
+| Supplier | yes | yes | yes | no | no | no |
+| Till operator | no | yes | yes | no | no | no |
+
+The sales report is the only place a payout figure is reachable from a tab a till
+operator keeps, so it is hidden on its own rather than by taking Sales away. Receipts
+and refunds still work at the counter, which is what somebody on the till actually
+needs mid-shift.
+
+**It is off until you turn it on.** Set a **Staff PIN** under Settings -> Staff -> Who
+can see what, and it comes on; save a blank one and it goes off again. A shop that
+never sets a PIN keeps exactly the app it had. The PIN is asked for when somebody
+picks a name above till operator - a till operator never sees a prompt, so the common
+case at the counter is unchanged. It is a different thing from the Team PIN further
+down Settings, which is about syncing.
+
+**What stops it locking you out of your own till.** Three guards, because every one of
+these would otherwise need a cleared browser to undo, on a device that may hold the
+only copy of that day's sales:
+
+- Every name already on a till becomes an **administrator**. Roles are new; the people
+  are not.
+- A PIN cannot be saved while nobody is an administrator.
+- The last administrator cannot be demoted or removed while the PIN is set.
+
+Picking nobody at all counts as a till operator, not as an administrator - otherwise
+tapping the name away at the top of the screen would be the way round the whole thing.
+
+**This hides screens. It does not hide data, and it is not security.** Every device
+syncs the whole workspace, so the sales and stock behind a hidden tab are still on that
+device and still come out in a backup. What it buys is that payout figures and Settings
+are not on display at the counter, and that somebody on the till cannot wander into
+Settings and undo something by accident.
+
+New `tests/roles.js`, 38 checks, most of them on the three lockout guards rather than
+on the hiding.
+
+---
+
 ## v1.40.0 - 2 September 2026, 22:53
 
 **Choose which photograph fronts a card on the website.**
