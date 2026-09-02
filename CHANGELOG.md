@@ -9,7 +9,7 @@ fixes.
 
 ---
 
-## v1.36.0 - 2 September 2026, 11:20
+## v1.36.0 - 2 September 2026, 02:21
 
 **Undo last sale will no longer delete a card sale.** The money for a card payment is with
 SumUp, and this app cannot send it back. Deleting the sale left the customer charged with
