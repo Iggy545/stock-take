@@ -9,6 +9,39 @@ fixes.
 
 ---
 
+## v1.40.0 - 2 September 2026, 22:53
+
+**Choose which photograph fronts a card on the website.**
+
+The browsing list folds variants of one name into a single card, and the picture on
+it was whichever member sorted first alphabetically. That is the alphabet choosing
+the shop window: the Crochet card is six items and three sets, and it fronted itself
+with a black bracelet because "Black" comes before "Tan" and "White".
+
+Two ticks, both reading **Show this photo on the shop list**:
+
+- under the item's own photograph, offered only when the item really shares a card
+  with others — on a lone item its picture leads whatever anybody ticks
+- inside the "Sold as a set" box, for the photograph of the set itself, which is
+  what this was asked for
+
+Ticking either unticks the other on the spot, and saving unticks every other member
+of the same card. Only one picture can front a card, and a tick that quietly lost an
+argument would look broken rather than contested.
+
+Stored as `lead` on the item — `'item'` or `'set'`, absent on nearly everything. ONE
+field with two values rather than two separate ticks, so an item cannot be asked to
+lead with two different pictures at once. The group is read with `variantSplit`, the
+same function the website splits names with, so a tick can never land on a card the
+customer does not see.
+
+A set that is taken apart drops the marker with its photograph; the website falls
+back to the first picture there is rather than leaving a blank card.
+
+`tests/card-lead.js` is new — 12 checks. The till suite is now 19 files.
+
+---
+
 ## v1.39.0 - 2 September 2026, 18:22
 
 **A set can carry a photograph of its own.**

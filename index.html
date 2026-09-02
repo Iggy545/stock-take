@@ -1470,6 +1470,15 @@
     <input type="file" id="editPhotoInput" accept="image/*" style="display:none;">
     <div class="photo-preview" id="editPhotoPreview" style="display:none;"></div>
     <button class="btn-remove-photo" id="editPhotoRemove" type="button" style="display:none;">Remove photo</button>
+    <!-- Which picture fronts the card on the website's browsing list. Only shown
+         when this item shares a card with others, because a lone item's photo
+         leads its own card whatever anybody ticks. Without this the list takes
+         whichever variant sorts first, which is the alphabet choosing the shop
+         window. -->
+    <label class="web-check" id="editLeadItemWrap" for="editLeadItem" style="display:none;margin-bottom:10px;">
+      <input type="checkbox" id="editLeadItem">
+      <span>Show this photo on the shop list</span>
+    </label>
 
     <!-- The extra photographs. Saved the moment they are taken rather than on
          Save, because they are not part of the record - and because losing a
@@ -1525,6 +1534,10 @@
           <button class="btn-remove-photo" id="editSetPhotoRemove" type="button" style="display:none;">Remove photo</button>
           <button class="btn-generate photo-btn" type="button" onclick="document.getElementById('editSetPhotoInput').click()">📷 Add a photo of the set</button>
           <input type="file" id="editSetPhotoInput" accept="image/*" style="display:none;">
+          <label class="web-check" id="editLeadSetWrap" for="editLeadSet" style="margin:8px 0 0;">
+            <input type="checkbox" id="editLeadSet">
+            <span>Show this photo on the shop list</span>
+          </label>
         </div>
         <div class="set-sum" id="editSetSummary">
           Pick the item this one is sold with — up to three more — then give the price for
@@ -4078,9 +4091,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.39.0';
+  const APP_VERSION = '1.40.0';
   const BUILD_DATE  = '2 Sept 2026';
-  const BUILD_TIME  = '18:22';
+  const BUILD_TIME  = '22:53';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4325,8 +4338,41 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       var it = items[bc];
       if(it && it.set) return;
       delete setPhotoCache[bc];
-      if(it){ delete it.setPhoto; delete it.hasSetPhoto; }
+      // And the card cannot go on being led by a photograph that has just gone.
+      if(it){
+        delete it.setPhoto; delete it.hasSetPhoto;
+        if(it.lead === 'set') delete it.lead;
+      }
       PhotoDB.sdel(bc).catch(function(){});
+    });
+  }
+
+  // WHICH PICTURE FRONTS A CARD on the website's browsing list.
+  //
+  // A card is a GROUP, worked out from the name rather than stored anywhere, so
+  // there is no record to hang "this card's picture" on. The choice is kept as a
+  // marker on one member instead: `lead` is 'item' for that member's own
+  // photograph, or 'set' for the photograph of the set it owns. Absent on nearly
+  // everything, which is the same shape `set` and `sub` keep.
+  //
+  // ONE VALUE, not two ticks stored separately, so an item cannot be asked to
+  // lead with two different pictures at once.
+  function itemsInGroupOf(barcode){
+    const me = items[barcode];
+    if(!me) return [];
+    const g = variantSplit(me.name).group;
+    if(!g) return [barcode];
+    return Object.keys(items).filter(function(bc){
+      return items[bc] && variantSplit(items[bc].name).group === g;
+    });
+  }
+
+  // Only one member of a card can lead it. Ticking here has to untick there, or
+  // the website would pick whichever the alphabet reached first and the tick
+  // would look broken rather than contested.
+  function clearGroupLead(barcode, except){
+    itemsInGroupOf(barcode).forEach(function(bc){
+      if(bc !== except && items[bc]) delete items[bc].lead;
     });
   }
 
@@ -6358,6 +6404,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   const newPhoto    = setupPhotoField('newPhotoInput',    'newPhotoPreview',    'newPhotoRemove');
   const editPhoto   = setupPhotoField('editPhotoInput',   'editPhotoPreview',   'editPhotoRemove');
   const editSetPhoto = setupPhotoField('editSetPhotoInput', 'editSetPhotoPreview', 'editSetPhotoRemove');
+  // Two ticks, one answer. Ticking either unticks the other on the spot rather
+  // than letting the form show a contradiction and resolving it quietly on Save.
+  document.getElementById('editLeadItem').addEventListener('change', function(){
+    if(this.checked) document.getElementById('editLeadSet').checked = false;
+  });
+  document.getElementById('editLeadSet').addEventListener('change', function(){
+    if(this.checked) document.getElementById('editLeadItem').checked = false;
+  });
 
   // ---- the extras strip on the edit form ----
   //
@@ -11090,6 +11144,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // draws what this device holds for the item being opened.
     renderEditExtras();
 
+    // The two ticks that say which picture fronts this card on the website.
+    // The item one is only offered when the card really is shared: on a lone
+    // item its own photograph leads whatever anybody ticks, and a tick that
+    // changes nothing is worse than no tick.
+    const shares = itemsInGroupOf(barcode).length > 1;
+    document.getElementById('editLeadItemWrap').style.display = shares ? 'flex' : 'none';
+    document.getElementById('editLeadItem').checked = shares && it.lead === 'item';
+    document.getElementById('editLeadSet').checked = it.lead === 'set';
+
     document.getElementById('editWebOn').checked = !!it.web;
     document.getElementById('editWebDesc').value = it.webDesc || '';
     // After the description is in, not before - and it opens unticked even
@@ -11205,6 +11268,17 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(webDesc) it.webDesc = webDesc; else delete it.webDesc;
     if(newSet) it.set = newSet;
     else if(clearSet) delete it.set;
+
+    // Which picture fronts the card. Read after the set has been settled above,
+    // because a set that has just been taken apart cannot lead with a photograph
+    // it no longer has.
+    const wantsSetLead = document.getElementById('editLeadSet').checked && !!it.set;
+    const wantsItemLead = document.getElementById('editLeadItem').checked;
+    if(wantsSetLead) it.lead = 'set';
+    else if(wantsItemLead) it.lead = 'item';
+    else delete it.lead;
+    // Only one member of a card can lead it.
+    if(it.lead) clearGroupLead(savedBarcode, savedBarcode);
 
     // The set's photograph, written the same way as the item's: the picture on
     // the record for reconcileSetPhotos to put away, and `setPhotoCleared` so a
