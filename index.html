@@ -4061,9 +4061,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.35.0';
-  const BUILD_DATE  = '1 Sept 2026';
-  const BUILD_TIME  = '14:58';
+  const APP_VERSION = '1.36.0';
+  const BUILD_DATE  = '2 Sept 2026';
+  const BUILD_TIME  = '11:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7948,15 +7948,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   }
 
   let refundState = null;
-  document.getElementById('receiptRefundBtn').addEventListener('click', () => {
-    const g = findTxn(receiptTxnId); if(!g) return;
+  // Opening the refund screen is no longer only the receipt button's job: Undo
+  // sends a card sale here rather than deleting it. One function, so both routes
+  // get the same screen, prefilled with the whole sale, and the same guard.
+  function openRefundFor(txnId){
+    const g = findTxn(txnId); if(!g) return;
     const rows = refundableLines(g).filter(r => r.left > 0);
     if(rows.length===0){ showToast('Everything on this sale is already refunded', 'error'); return; }
     refundState = { txnId: g.id, rows: rows.map(r => ({ line:r.line, left:r.left, take:r.left })) };
     document.getElementById('receiptModal').style.display='none';
     renderRefundModal();
     document.getElementById('refundModal').style.display='flex';
-  });
+  }
+  document.getElementById('receiptRefundBtn').addEventListener('click', () => openRefundFor(receiptTxnId));
 
   function renderRefundModal(){
     const wrap = document.getElementById('refundLines');
@@ -9083,22 +9087,77 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     });
   }
 
+  // ---- Undo: what the button is allowed to do ----
+  // Kept out of the click handler and clear of the DOM so it can be tested.
+  //
+  // Undo deletes a transaction outright. That is the right answer when nothing
+  // has to be sent anywhere, and the wrong one when something has, because this
+  // app cannot move money. Three cases to tell apart.
+  //
+  //  - A card SALE is refused. The money is with SumUp; deleting the sale would
+  //    leave the customer charged, throw away the only copy of the card
+  //    reference the till keeps (the reader service holds the checkout for two
+  //    days and no longer — see finishCardSale), and raise none of the "card
+  //    refund due" nagging, which lives on refund lines and so never gets
+  //    written. It goes to the refund screen instead: same stock movement, and
+  //    the money gets chased.
+  //  - A refund already marked SENT on the reader is allowed, but says plainly
+  //    that the money has gone and only the record is going with it. Correcting
+  //    the books after the fact is a real thing to want.
+  //  - Everything else — cash, other, a web sale, a refund not yet sent —
+  //    behaves as it always has. A web sale gets one line about where the money
+  //    actually is, since the till never held it.
+  function undoPlan(g){
+    const isRefund = g.kind === 'refund';
+
+    if(!isRefund && g.pay === 'card'){
+      return {
+        mode: 'refund',
+        title: 'That sale was paid by card',
+        message: 'The money is with SumUp and this app cannot send it back, so removing the sale '
+               + 'would leave the customer charged with nothing on the till to show it. Refund it '
+               + 'instead: the stock goes back just the same, and the till keeps reminding you '
+               + 'until the refund has been done on the reader.',
+        okLabel: 'Refund it'
+      };
+    }
+
+    if(isRefund){
+      let message = `The refund of ${money(-txnTotal(g))} will be removed and the stock taken back out.`;
+      if(g.cardRefund === 'sent'){
+        message += ' This one is marked as already sent on the reader, so the customer keeps the '
+                 + 'money — undoing removes the record of it and nothing else.';
+      }else if(g.cardRefund === 'due'){
+        message += ' Nothing has been sent on the reader yet, so there is no money to chase.';
+      }
+      return { mode:'undo', title:'Undo last refund?', message: message, okLabel:'Undo' };
+    }
+
+    const what = g.lines.length === 1
+      ? `"${g.lines[0].name}"`
+      : `${g.lines.length} items`;
+    let message = `${what} (${money(txnTotal(g))}) will be removed from sales and put back into stock.`;
+    if(g.pay === 'web'){
+      message += ' The customer paid on the website, so that money sits in the online '
+               + 'account — this changes the till only.';
+    }
+    return { mode:'undo', title:'Undo last sale?', message: message, okLabel:'Undo' };
+  }
+
   // Undo removes the whole most-recent transaction (all of its lines) and
-  // reverses its stock movement — including refund transactions.
+  // reverses its stock movement — including refund transactions. What it will
+  // not do is delete a card sale; undoPlan above decides, and this only obeys.
   document.getElementById('undoSaleBtn').addEventListener('click', () => {
     if(sales.length === 0){ showToast('No sales to undo', 'error'); return; }
     const g = txnGroups()[0];
     const isRefund = g.kind === 'refund';
-    const what = g.lines.length === 1
-      ? `"${g.lines[0].name}"`
-      : `${g.lines.length} items`;
+    const plan = undoPlan(g);
     askConfirm(
-      isRefund ? 'Undo last refund?' : 'Undo last sale?',
-      isRefund
-        ? `The refund of ${money(-txnTotal(g))} will be removed and the stock taken back out.`
-        : `${what} (${money(txnTotal(g))}) will be removed from sales and put back into stock.`,
-      'Undo',
+      plan.title,
+      plan.message,
+      plan.okLabel,
       () => {
+        if(plan.mode === 'refund'){ openRefundFor(g.id); return; }
         const ids = {};
         g.lines.forEach(l => { ids[l.id || (String(l.barcode||'')+'|'+String(l.at||''))] = 1; });
         sales = sales.filter(s => {
@@ -9111,6 +9170,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           }
           return false;
         });
+        // A web sale that has just been unrung leaves nobody a reason to go and
+        // take anything off the shelf, so the standing alert goes with it. Done
+        // here rather than through webSoldClear, which announces "Off the
+        // floor" — true when someone has fetched the thing, a lie when the sale
+        // itself has gone. Marked done as well as dropped, or the next sync
+        // snapshot would hand the same job straight back.
+        if(g.pay === 'web' && webSold){
+          webSold.pending = webSold.pending.filter(j => j.txn !== g.id);
+          webSold.done[g.id] = Date.now();
+          saveWebSold();
+          renderWebSoldBanner();
+          renderWebSoldList();
+        }
         saveItems();
         saveSales();
         renderList(document.getElementById('searchBox').value);

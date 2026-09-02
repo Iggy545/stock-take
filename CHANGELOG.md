@@ -9,6 +9,29 @@ fixes.
 
 ---
 
+## v1.36.0 - 2 September 2026, 11:20
+
+**Undo last sale will no longer delete a card sale.** The money for a card payment is with
+SumUp, and this app cannot send it back. Deleting the sale left the customer charged with
+nothing on the till to show it, threw away the only copy of the card reference the till
+keeps, and raised none of the "card refund due" reminders — those only ever get written on
+a refund. So Undo now refuses a card sale and offers to **refund** it instead, opening the
+refund screen with the whole sale already filled in. The stock goes back exactly as before,
+and the reminder to do the refund on the reader appears the way it does for any other
+refund.
+
+**Undoing a refund still works, and that matters.** It is the only way back from a refund
+given by mistake, so it was deliberately left alone. A refund already marked as sent on the
+reader now says plainly that the money has gone and only the record is being removed.
+
+**Undoing a website sale says where the money actually is** — in the online account, not
+the till — and clears that order off the "still on the shop floor" list, which it used to
+leave behind pointing at a sale that no longer existed.
+
+Nothing else changed: cash and other sales undo exactly as they always have.
+
+---
+
 ## v1.35.0 - 1 September 2026, 14:58
 
 **More than one photograph per item.** Edit item now has *More photos for the website*
