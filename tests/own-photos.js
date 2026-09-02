@@ -41,7 +41,11 @@ function check(name, cond, detail) {
 }
 
 const SUMUP = 'https://images.sumup.com/img_5N01TEVRT793FTM2GRDNYYJAZ9/image.png';
-const OURS = 'https://soulful-angels-oracleshop.co.uk/img/img_5N01TEVRT793FTM2GRDNYYJAZ9.webp';
+// The shop's own Cloudflare account. The old apex host still answers and still
+// returns a picture, but from the old account's Pages project, which no longer
+// receives deploys -- so it serves photographs that are months stale. Pinned
+// here so repointing it is a deliberate act with a failing test, not a typo.
+const OURS = 'https://soulful-angels.pages.dev/img/img_5N01TEVRT793FTM2GRDNYYJAZ9.webp';
 
 console.log('\nour own copy is preferred');
 check('a SumUp link becomes our copy',
