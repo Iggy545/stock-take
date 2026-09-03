@@ -9,6 +9,28 @@ fixes.
 
 ---
 
+## v1.41.1 - 3 September 2026, 01:11
+
+**Only an administrator is asked for the staff PIN now.**
+
+v1.41.0 guarded the supplier level too, and that was wrong in a way worth spelling
+out. A supplier needed the PIN to pick their **own** name - so every supplier had to
+be told it - and the same PIN then let them pick an administrator and open the payout
+report. One shared secret cannot separate two groups when both groups have to hold it.
+
+Picking a supplier or a till operator now asks nothing. The PIN belongs to the
+administrators and nobody below that level has to be told a secret at all.
+
+The trade, accepted deliberately: anybody can pick a supplier name and look at the
+stock list. Stock is not what the PIN was protecting - the payout figures and Settings
+are, and those are still behind it.
+
+No change to the levels themselves, to what each one sees, or to the three guards that
+stop the shop locking itself out. `tests/roles.js` gains four checks pinning down that
+exactly one level is guarded and which one.
+
+---
+
 ## v1.41.0 - 3 September 2026, 00:50
 
 **Three levels of access, so payout figures are not on screen in front of customers.**

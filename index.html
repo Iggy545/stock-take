@@ -1329,8 +1329,8 @@
   <div class="modal">
     <h2>&#128274; Enter the staff PIN</h2>
     <p style="font-size:13px;color:var(--muted);line-height:1.45;margin:6px 0 14px;">
-      This name reaches more than the till. Ask an administrator if you do not
-      have it. It is not the Team PIN further down Settings.
+      This name is an administrator. Ask one of them if you do not have the PIN.
+      It is not the Team PIN further down Settings.
     </p>
     <input type="password" inputmode="numeric" id="pinInput" placeholder="Staff PIN" autocomplete="off" style="width:100%;margin-bottom:10px;">
     <button class="btn btn-primary" id="pinOkBtn" style="margin-bottom:8px;">Unlock</button>
@@ -4112,9 +4112,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.41.0';
+  const APP_VERSION = '1.41.1';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '00:45';
+  const BUILD_TIME  = '01:09';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7200,11 +7200,23 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
      Settings and undo something by accident.
 
      The gate is OFF until a PIN is set, so a shop that never sets one keeps
-     exactly the app it had before. */
+     exactly the app it had before.
+
+     `guarded` means "prove it with the PIN". ONLY the administrator is guarded,
+     and that is a fix rather than an oversight: v1.41.0 guarded the supplier
+     too, which meant a supplier needed the PIN to pick their OWN name - so they
+     knew it - and the same PIN then let them pick an administrator. One shared
+     secret cannot separate two groups when both groups have to hold it. Guarding
+     only the top level means nobody below it carries a secret at all, and the
+     things actually worth protecting - the payout figures and Settings - are the
+     things behind the prompt.
+
+     The cost, accepted deliberately: anyone may pick a supplier name and see the
+     stock list. Stock is not what the PIN was for. */
   const ROLES = {
     admin:    { label: 'Administrator', tabs: null,                   guarded: true,
                 hint: 'Everything, including Settings and the sales report.' },
-    supplier: { label: 'Supplier',      tabs: ['till','sold','list'], guarded: true,
+    supplier: { label: 'Supplier',      tabs: ['till','sold','list'], guarded: false,
                 hint: 'Till, Sales and the stock list. No Add, no Settings, no report.' },
     till:     { label: 'Till operator', tabs: ['till','sold'],        guarded: false,
                 hint: 'Till and Sales only. No payout figures.' },
@@ -7338,7 +7350,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         ? 'Roles are <b>on</b>.<br>' + ROLE_ORDER.map(function(r){
             return '<b>' + ROLES[r].label + '</b> &ndash; ' + ROLES[r].hint; }).join('<br>')
           + '<br><br>Save a blank PIN to turn roles off again. This hides screens; it does not hide the data behind them, and a backup still holds everything.'
-        : 'Roles are <b>off</b> &ndash; everybody sees everything, exactly as before. Set a staff PIN to turn them on; it is asked for whenever somebody picks a name above till operator. This is <b>not</b> the Team PIN further down, which is about syncing.';
+        : 'Roles are <b>off</b> &ndash; everybody sees everything, exactly as before. Set a staff PIN to turn them on; it is asked for when somebody picks an <b>administrator</b>, and only then. This is <b>not</b> the Team PIN further down, which is about syncing.';
     }
   }
   function openStaffModal(){
@@ -7358,8 +7370,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         document.getElementById('staffModal').style.display = 'none';
         showToast(nm + ' is on the till', 'success');
       };
-      /* A guarded role has to prove itself. A till operator never sees a PIN,
-         which is the whole point: the common case is unchanged. */
+      /* Only an administrator is asked. Everybody else picks their own name and
+         gets on with it, which is the whole point: nobody below the top level
+         has to be told a secret. */
       if(rolesActive() && ROLES[roleOf(nm)] && ROLES[roleOf(nm)].guarded) askPin(go);
       else go();
     }); });

@@ -209,6 +209,22 @@ function check(name, cond, detail) {
   check('and every tab stays on screen', c.__visible() === 'add,list,settings,sold,till');
 }
 
+// ---- who is actually asked for the PIN --------------------------------------
+// v1.41.0 guarded the supplier as well, and that was wrong: a supplier needed
+// the PIN to pick their OWN name, so they held it, and the same PIN then let
+// them pick an administrator. One shared secret cannot separate two groups when
+// both have to hold it. Only the top level is guarded now.
+{
+  const c = build({ staff: [{ name: 'Kay', role: 'admin' }] });
+  const R = c.__get().ROLES;
+  check('an administrator is asked for the PIN', R.admin.guarded === true);
+  check('a supplier is NOT asked - holding the PIN is what broke it',
+    R.supplier.guarded === false);
+  check('a till operator is not asked either', R.till.guarded === false);
+  check('exactly one level is guarded',
+    c.__get().ROLE_ORDER.filter(r => R[r].guarded).length === 1);
+}
+
 // ---- counting administrators, which is what guards the lockouts -------------
 {
   const c = build({ staff: [{ name: 'Kay', role: 'admin' }, { name: 'Bea', role: 'till' }] });
