@@ -24,6 +24,7 @@ node tests/undo-guard.js index.html
 node tests/sets.js index.html
 node tests/roles.js index.html
 node tests/card-recovery.js index.html
+node tests/backup-reminder.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -82,6 +83,7 @@ a hand-written `code#fingerprint` key, so the broken key scheme crashed the run 
 failing a check; and it asked `extrasItems()` whether an emptied item had been dropped,
 which filters empties out and so could never tell. Both are fixed, and only then did all
 six copies fail.
+| `backup-reminder.js` | The weekly backup banner: that the first run starts the clock instead of nagging, that the cross snoozes for a day rather than a week, that an un-exported extra photograph can raise the banner on its own once it is a week old - because it is the only thing in the app with no second copy - and that when both are due the button still saves the backup | v1.43.0 |
 | `card-recovery.js` | A card payment the page did not live to see the end of: that one still open is KEPT rather than forgotten, that a payment taken while the basket has since changed is never recorded automatically, that an empty basket does not count as a match, and that a payment which can no longer be asked about is reported without deciding either way | v1.42.0 |
 | `roles.js` | The three access levels: that an old bare-name staff list all comes back as **administrator**, that the gate stays off until a staff PIN is set, that nobody-picked is the most restricted rather than the least, and which tabs each role may stand on | v1.41.0 |
 
@@ -101,3 +103,13 @@ The first attempt crashed on the swallowed-payment copy instead of failing - it 
 `.message` off a plan that no longer had one - which is the same fault `extras.js`
 had, and it takes the rest of the checks down with it. Messages are now read through
 a helper that returns an empty string.
+
+`backup-reminder.js` was checked against six broken copies: nagging on the very first
+run, ignoring the snooze, the photographs never being able to raise the banner alone, a
+picture taken yesterday being nagged about, the button pointing at Settings when a
+backup was what was due, and "1 extra photographs". All six produce FAIL lines.
+
+The one worth knowing about is the third. If the photographs can only ever be mentioned
+alongside an overdue backup, then a shop that backs up diligently is the shop that never
+hears about the pictures it is about to lose - the failure is invisible precisely when
+everything else is being done right.

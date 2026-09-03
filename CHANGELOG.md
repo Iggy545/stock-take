@@ -9,6 +9,65 @@ fixes.
 
 ---
 
+## v1.43.0 - 3 September 2026, 09:23
+
+**The till now asks for its weekly backup, and speaks up for the photographs
+that have no second copy anywhere.**
+
+There has been a weekly reminder to export the stock spreadsheet since v1.16.0.
+There was never one for **Save backup** - the thing that actually protects the
+data - so it happened when somebody remembered. This adds the same banner, in
+the same clothes, above the export one, because the two are one weekly rhythm
+rather than two things to remember separately.
+
+It also speaks for the **extra photographs**, and that is the half with teeth.
+Those pictures never sync, by design, and the backup file does not carry them
+either - it carries the item records and a count of the main photographs. The
+device that took them is the only copy, and iOS clears the storage of an app it
+has not seen for about a week. So an extra that has sat un-exported that long is
+the only thing in this app that can genuinely be lost, and it now gets said out
+loud instead of sitting as a number on the Settings page.
+
+What it does:
+
+- **Overdue backup** - "Weekly backup is due", and the button saves the file.
+- **Photographs older than a week with no export** - the banner says how many
+  and that they are only on this device, and the button opens Settings, where
+  the export lives.
+- **Both** - the backup goes first and the message names the photographs too.
+  Doing the backup re-runs the decision, and the photographs then get the banner
+  to themselves, which walks through both without ever mislabelling the button.
+
+Deliberately the same as the stock export in three ways it would be easy to get
+wrong: the first ever run **starts the clock quietly** rather than nagging
+somebody who has just opened the app, the cross **snoozes until tomorrow** rather
+than dismissing for a week, and the week is only reset once a file has actually
+been written or shared - **cancelling the share sheet does not count as a
+backup**.
+
+`tests/backup-reminder.js` is new: 24 checks on the decision, which is pure so a
+test can reach it. Checked against six deliberately broken copies - one that nags
+on first run, one that ignores the snooze, one where the photographs can never
+raise the banner alone, one that nags about a picture taken yesterday, one that
+sends the button to the wrong place when both are due, and one that says
+"1 extra photographs" - and all six produce FAIL lines. Suite 817 checks across
+22 files.
+
+**The operator's guide is rebuilt (20 -> 22 pages)** with the rhythm written in:
+where the files go, keeping the last six rather than overwriting one, and how to
+check a backup really works. It also **corrects a line that was wrong**: it said
+a backup holds "items, sales, settings". It does not hold Settings - not the
+fees, the commission, the staff list or the reader address - and that is exactly
+the page somebody would be reading when it mattered.
+
+The guide now carries the restore trap as well: **restoring on a till that is
+connected to team sync does not just change that device.** It pushes the old list
+to every other one, and anything added since that backup was taken is deleted
+everywhere. So a backup is checked on a computer, in a browser the shop does not
+use for the till, never on a connected till.
+
+---
+
 ## v1.42.0 - 3 September 2026, 02:25
 
 **A card payment can no longer be lost when the app closes underneath it, and

@@ -189,6 +189,10 @@
   .export-banner button{border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
   #exportBannerGo{background:var(--clay);color:#fff;}
   #exportBannerClose{background:none;color:var(--muted);font-size:15px;padding:8px 6px;}
+  /* The backup reminder wears the same clothes as the export one on purpose -
+     they are one weekly rhythm, not two things to remember separately. */
+  #backupBannerGo{background:var(--clay);color:#fff;}
+  #backupBannerClose{background:none;color:var(--muted);font-size:15px;padding:8px 6px;}
 
   /* Sold on the website. Louder than the other banners on purpose: the others
      are notices, this one is a job -- something is still on the shelf that has
@@ -772,6 +776,13 @@
 </header>
 
 <main>
+  <!-- The weekly backup, and the extra photographs. Sits above the stock export
+       because it is the one that protects the data rather than a spreadsheet. -->
+  <div class="export-banner" id="backupBanner" style="display:none;">
+    <span id="backupBannerText">💾 Weekly backup is due</span>
+    <button id="backupBannerGo" type="button">Back up now</button>
+    <button id="backupBannerClose" type="button" aria-label="Not now">✕</button>
+  </div>
   <div class="export-banner" id="exportBanner" style="display:none;">
     <span>📤 Weekly stock export is due</span>
     <button id="exportBannerGo" type="button">Export now</button>
@@ -4126,9 +4137,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.42.0';
+  const APP_VERSION = '1.43.0';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '02:25';
+  const BUILD_TIME  = '09:23';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4731,6 +4742,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         extrasStoreOK = true;
       }catch(e){ extrasStoreOK = false; }
       try{ renderExtrasNote(); }catch(e){}
+      // Only now is the extras index real, so this is the first point at which
+      // the backup banner can honestly speak for the photographs.
+      try{ refreshBackupBanner(); }catch(e){}
 
       // Re-save items (now stripped) and refresh the screen with photos in place.
       saveItems();
@@ -6610,6 +6624,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
       markExtrasExported();
       renderExtrasNote();
+      refreshBackupBanner();   // the pictures now have a second copy
       showToast(`Exported ${pics} photo${pics===1?'':'s'}`, 'success');
     }catch(err){
       showToast('Could not build the export', 'error');
@@ -11836,6 +11851,110 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
   refreshExportBanner();
 
+  /* ---- The weekly backup reminder --------------------------------------
+     The banner above protects a spreadsheet. This one protects the data, and
+     until now the only thing making it happen was somebody remembering.
+
+     It speaks for the extra photographs too, because they are the one thing in
+     this app with no second copy anywhere: they never sync (see the note at
+     addExtra), and Save backup does not carry them either - it carries a COUNT
+     of the main photographs and the item records. iOS clears the storage of an
+     app it has not seen for about a week, so an extra that has sat un-exported
+     that long is the only thing here that can genuinely be lost.
+     --------------------------------------------------------------------- */
+  const BACKUP_STAMP_KEY  = 'stockTakeLastBackup';
+  const BACKUP_SNOOZE_KEY = 'stockTakeBackupSnooze';
+
+  // How old the oldest un-exported picture on this device is, in ms; 0 when
+  // there are none. Kept apart from extrasUnexported(), which counts them and
+  // is relied on elsewhere.
+  function extrasOldestUnexportedAge(){
+    let since = 0;
+    try{ since = Number(localStorage.getItem(EXPORTED_KEY)) || 0; }catch(e){}
+    let oldest = 0;
+    Object.keys(extrasIndex).forEach(code => {
+      extrasIndex[code].forEach(fp => {
+        const at = extrasAt[extraKey(code, fp)] || 0;
+        if(at > since && (oldest === 0 || at < oldest)) oldest = at;
+      });
+    });
+    return oldest ? Math.max(0, Date.now() - oldest) : 0;
+  }
+
+  // What the banner should say, and which button it should offer. Pure on
+  // purpose: this decides how often the shop is interrupted, and an app that
+  // cries wolf weekly gets dismissed without being read.
+  //
+  // `action` is what the button does - 'backup' saves the file, 'photos' opens
+  // Settings, where the export lives. When both are outstanding the backup goes
+  // first and the message names the photographs; finishing it re-runs this and
+  // the photographs get the banner to themselves.
+  function backupPlan(now, last, snooze, itemCount, extrasCount, oldestExtraAge){
+    const WEEK = 7*24*60*60*1000;
+    const none = { due:false, start:false, action:null, message:'' };
+    if(!itemCount) return none;
+    // Never backed up on this device. Start the clock quietly rather than nag
+    // somebody who has just opened the app for the first time - same as the
+    // stock export does.
+    if(!last) return { due:false, start:true, action:null, message:'' };
+    if(now <= snooze) return none;
+
+    const backupDue = (now - last) > WEEK;
+    const photosDue = extrasCount > 0 && oldestExtraAge > WEEK;
+    if(!backupDue && !photosDue) return none;
+
+    const pics = extrasCount === 1 ? '1 extra photograph is' : extrasCount + ' extra photographs are';
+    if(backupDue && photosDue){
+      return { due:true, start:false, action:'backup',
+               message:'💾 Weekly backup is due — and ' + pics + ' only on this device' };
+    }
+    if(photosDue){
+      return { due:true, start:false, action:'photos',
+               message:'🖼️ ' + pics + ' only on this device — export them' };
+    }
+    return { due:true, start:false, action:'backup', message:'💾 Weekly backup is due' };
+  }
+
+  function refreshBackupBanner(){
+    const el = document.getElementById('backupBanner');
+    if(!el) return;
+    let plan = { due:false, start:false, action:null, message:'' };
+    try{
+      const last   = Date.parse(localStorage.getItem(BACKUP_STAMP_KEY)||'') || 0;
+      const snooze = Date.parse(localStorage.getItem(BACKUP_SNOOZE_KEY)||'') || 0;
+      plan = backupPlan(Date.now(), last, snooze, Object.keys(items).length,
+                        extrasUnexported(), extrasOldestUnexportedAge());
+      if(plan.start) localStorage.setItem(BACKUP_STAMP_KEY, new Date().toISOString());
+    }catch(e){}
+    if(plan.due){
+      document.getElementById('backupBannerText').textContent = plan.message;
+      document.getElementById('backupBannerGo').textContent =
+        plan.action === 'photos' ? 'Open Settings' : 'Back up now';
+      el.dataset.action = plan.action;
+    }
+    el.style.display = plan.due ? 'flex' : 'none';
+  }
+  document.getElementById('backupBannerGo').addEventListener('click', () => {
+    if(document.getElementById('backupBanner').dataset.action === 'photos'){
+      const tab = document.querySelector('.tab[data-tab="settings"]');
+      if(tab) tab.click();
+      return;
+    }
+    document.getElementById('backupBtn').click();
+  });
+  // Called only once a file has actually been written or shared. Cancelling the
+  // share sheet must not reset the week, the same way cancelling the format
+  // chooser does not reset the stock export.
+  function markBackedUp(){
+    try{ localStorage.setItem(BACKUP_STAMP_KEY, new Date().toISOString()); }catch(e){}
+    refreshBackupBanner();
+  }
+  document.getElementById('backupBannerClose').addEventListener('click', () => {
+    try{ localStorage.setItem(BACKUP_SNOOZE_KEY, new Date(Date.now()+24*60*60*1000).toISOString()); }catch(e){}
+    document.getElementById('backupBanner').style.display = 'none';
+    showToast("Okay — I'll remind you tomorrow", 'success');
+  });
+
   // ---- Backup / restore ----
   // A complete snapshot: stock, photos, sales and the QR numbering. This is the
   // ONLY way the data leaves this device — the app file itself carries no data.
@@ -12156,6 +12275,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           title: 'Stock take backup',
           text: `Stock backup — ${Object.keys(items).length} items, ${photosIncluded} photos, ${sales.length} sales`
         });
+        markBackedUp();
         showToast(`Backup shared — ${photosIncluded} photo${photosIncluded===1?'':'s'}`, 'success');
         return;
       }catch(e){
@@ -12174,6 +12294,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      markBackedUp();
       showToast(`Backup saved — ${photosIncluded} photo${photosIncluded===1?'':'s'}`, 'success');
     }catch(e){
       showToast('Could not create the backup file', 'error');
@@ -13080,6 +13201,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   renderList();
   renderSold();   // also renders the till (basket survives a refresh)
   renderMakerUi();
+  refreshBackupBanner();   // again once the photographs have hydrated, in initPhotos
   initPhotos();   // migrate/hydrate photos, then trigger sync auto-connect
   // Safety net: if IndexedDB ever stalls, still bring sync up shortly after.
   setTimeout(maybeAutoConnectSync, 4000);
