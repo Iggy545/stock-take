@@ -1066,7 +1066,7 @@
       <div class="folder-hint" style="margin-top:8px;">Whoever is picked on the till gets their name recorded on every sale they ring up.</div>
       <div class="quick-sell-head" style="margin-top:14px;">Who can see what</div>
       <div class="barcode-generate-row" style="margin-top:8px;">
-        <input type="password" inputmode="numeric" id="staffPinInput" placeholder="Staff PIN" autocomplete="off">
+        <input type="text" inputmode="numeric" id="staffPinInput" placeholder="Staff PIN" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button class="btn-generate" id="staffPinSaveBtn" style="margin-bottom:0;">Save</button>
       </div>
       <div class="folder-hint" id="staffPinHint" style="margin-top:8px;"></div>
@@ -1334,7 +1334,8 @@
     </p>
     <input type="password" inputmode="numeric" id="pinInput" placeholder="Staff PIN" autocomplete="off" style="width:100%;margin-bottom:10px;">
     <button class="btn btn-primary" id="pinOkBtn" style="margin-bottom:8px;">Unlock</button>
-    <button class="btn btn-secondary" id="pinCancelBtn">Cancel</button>
+    <button class="btn btn-secondary" id="pinCancelBtn" style="margin-bottom:8px;">Cancel</button>
+    <button class="btn btn-secondary" id="pinForgotBtn" style="font-size:12px;">Forgot the PIN?</button>
   </div>
 </div>
 
@@ -4112,9 +4113,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.41.1';
+  const APP_VERSION = '1.41.2';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '01:09';
+  const BUILD_TIME  = '01:20';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7243,6 +7244,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   /* No PIN, or nobody on the list, means the gate is off altogether - otherwise
      a fresh device would open with no way into Settings to set itself up. */
   function rolesActive(){ return !!staffPin() && staff.length > 0; }
+  /* The way out of a PIN nobody has. It has to be reachable from the PROMPT,
+     because that is the only screen somebody locked out can still get to -
+     Settings is behind the very thing they cannot answer.
+
+     Yes, this means anyone at the device can switch the levels off. That is the
+     honest position rather than a weakening: it was never a security boundary
+     (the data is on the device either way), and a speed bump nobody can get past
+     is not a speed bump, it is a brick. One iPad had to be talked down off
+     exactly that before this existed. */
+  function clearStaffPin(){
+    try{ localStorage.removeItem(STAFF_PIN_KEY); }catch(e){}
+    return staffPin() === '';
+  }
   function currentStaff(){
     try{
       const c = localStorage.getItem(STAFF_CUR_KEY) || '';
@@ -7410,6 +7424,18 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     if(e.key === 'Enter') document.getElementById('pinOkBtn').click();
   });
   document.getElementById('pinCancelBtn').addEventListener('click', closePin);
+  document.getElementById('pinForgotBtn').addEventListener('click', () => {
+    closePin();
+    askConfirm('Clear the staff PIN?',
+      'Everybody goes back to seeing everything, and the levels stop applying until a new '
+      + 'PIN is set in Settings. Nothing else is touched - no stock, no sales, no photographs.',
+      'Clear it', () => {
+        clearStaffPin();
+        renderStaffUi();
+        applyRole();
+        showToast('Staff PIN cleared - set a new one in Settings', 'success');
+      });
+  });
   document.getElementById('pinModal').addEventListener('click', (e) => {
     if(e.target === e.currentTarget) closePin();
   });

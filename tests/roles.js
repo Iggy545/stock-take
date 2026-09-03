@@ -225,6 +225,26 @@ function check(name, cond, detail) {
     c.__get().ROLE_ORDER.filter(r => R[r].guarded).length === 1);
 }
 
+// ---- the way out of a PIN nobody has ----------------------------------------
+// A real iPad was locked out of its own Settings by a PIN that was set and never
+// seen. The prompt is the only screen a locked-out person can still reach, so
+// the escape lives there. It has to leave everything else alone.
+{
+  const c = build({ staff: [{ name: 'Kay', role: 'admin' }], pin: '4321', current: 'Kay' });
+  check('the gate is on to begin with', c.rolesActive() === true);
+  const gone = c.clearStaffPin();
+  check('clearing the PIN reports that it worked', gone === true);
+  check('and the gate is off afterwards', c.rolesActive() === false);
+  check('so everybody sees everything again', c.currentRole() === 'admin');
+  check('the staff list is untouched',
+    c.S().length === 1 && c.S()[0].name === 'Kay' && c.S()[0].role === 'admin');
+  check('and who was on the till is untouched', c.currentStaff() === 'Kay');
+}
+{
+  const c = build({ staff: [{ name: 'Kay', role: 'admin' }] });
+  check('clearing a PIN that was never set is not an error', c.clearStaffPin() === true);
+}
+
 // ---- counting administrators, which is what guards the lockouts -------------
 {
   const c = build({ staff: [{ name: 'Kay', role: 'admin' }, { name: 'Bea', role: 'till' }] });

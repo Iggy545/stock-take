@@ -9,6 +9,38 @@ fixes.
 
 ---
 
+## v1.41.2 - 3 September 2026, 01:22
+
+**A way out of a staff PIN nobody has, and a PIN field you can actually read.**
+
+An iPad was locked out of its own Settings by a PIN that had been set and never
+seen. The PIN box was a password field, and on iPad the keychain can offer to fill
+one with something generated - so it saved, masked, and was gone. The device was a
+Home Screen web app, which has no address bar and its own storage, so none of the
+usual ways round it existed either.
+
+Two changes:
+
+- **Forgot the PIN?** on the prompt itself. That prompt is the only screen somebody
+  locked out can still reach - Settings is behind the very thing they cannot
+  answer. It asks to confirm, then clears the PIN and nothing else: no stock, no
+  sales, no photographs, and the staff list and their levels stay exactly as they
+  were.
+- **The PIN is now typed in the clear when you set it**, in Settings, so you can see
+  what you are saving. It is still masked when it is asked for. A masked box is what
+  caused this, and it also stopped iOS offering to fill it.
+
+This does mean anybody at the device can switch the levels off. That is the honest
+position rather than a weakening: it was never a security boundary - the data is on
+the device either way - and a speed bump nobody can get past is not a speed bump,
+it is a brick.
+
+`tests/roles.js` gains seven checks: that clearing works, that it is safe to do when
+no PIN was ever set, and above all that it leaves the staff list, the levels and who
+is on the till alone. Suite 745 checks across 20 files.
+
+---
+
 ## v1.41.1 - 3 September 2026, 01:11
 
 **Only an administrator is asked for the staff PIN now.**
