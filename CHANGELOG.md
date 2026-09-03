@@ -9,7 +9,7 @@ fixes.
 
 ---
 
-## v1.45.0 - 3 September 2026, 12:55
+## v1.45.0 - 3 September 2026, 12:40
 
 **Pressing "Try the card again" can no longer take the money twice.**
 
