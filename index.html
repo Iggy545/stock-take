@@ -4156,9 +4156,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.44.0';
+  const APP_VERSION = '1.45.0';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '11:37';
+  const BUILD_TIME  = '12:55';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7990,6 +7990,55 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       try{ localStorage.removeItem(PENDING_KEY); }catch(e){}
     }
 
+    /* ---- the key that stops Try again becoming a second payment ------------
+       The pending record above only exists once the payment service has
+       answered with an id. The hole underneath it is the attempt whose ANSWER
+       never arrives: the reader is loaded, the iPad sleeps or the wifi drops,
+       and this till is told only that it could not reach the reader. Press
+       "Try the card again" and, without this, a second payment starts for the
+       same basket and the customer can be charged twice.
+
+       So a key is written down BEFORE the request goes out, and sent with it.
+       The payment service remembers which payment that key produced, so the
+       retry gets the first payment back instead of a new one.
+
+       A key is only ever reused when the last attempt at the SAME amount ended
+       without an answer, and only for a few minutes. A different total is a
+       different sale; so is the same total an hour later, and handing that one
+       an old key could report somebody else's payment as this basket's.
+       --------------------------------------------------------------------- */
+    const ATTEMPT_KEY = 'posCardAttempt';
+    const ATTEMPT_LIFE_MS = 5 * 60 * 1000;
+
+    function newAttemptKey(){
+      const bytes = new Uint8Array(16);
+      // Unguessable is not what this needs - the service only ever matches it
+      // against keys this till gave it. Unique is what it needs.
+      if(window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+      else for(let i=0;i<bytes.length;i++) bytes[i] = Math.floor(Math.random()*256);
+      return Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+    function attemptKeyFor(amountMinor){
+      let held = null;
+      try{ held = JSON.parse(localStorage.getItem(ATTEMPT_KEY) || 'null'); }catch(e){}
+      const recent = held && (Date.now() - (Number(held.at) || 0) < ATTEMPT_LIFE_MS);
+      if(recent && Number(held.amountMinor) === Number(amountMinor) && /^[0-9a-f]{32}$/.test(String(held.key || ''))){
+        return held.key;
+      }
+      const key = newAttemptKey();
+      try{
+        localStorage.setItem(ATTEMPT_KEY, JSON.stringify({ key:key, amountMinor:amountMinor, at:Date.now() }));
+      }catch(e){}
+      return key;
+    }
+    // Dropped the moment the service answers, however it answered: from then
+    // on the payment has an id, and the id is the handle on it. Dropped too
+    // when the operator gives up on the card, because the next card sale for
+    // the same amount is a different sale.
+    function forgetAttemptKey(){
+      try{ localStorage.removeItem(ATTEMPT_KEY); }catch(e){}
+    }
+
     function get(){ try{ return localStorage.getItem(URL_KEY)||''; }catch(e){ return ''; } }
     function isSet(){ return !!get(); }
     // Sign-in tokens travel on these requests, so plain http is refused —
@@ -8089,20 +8138,30 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       finishing = false;
       show(f.total, ref);
 
+      const attempt = attemptKeyFor(amountMinor);
+
       let started;
       try{
         started = await call('/checkout', {
           method:'POST',
-          body: JSON.stringify({ amountMinor: amountMinor, reference: ref })
+          body: JSON.stringify({ amountMinor: amountMinor, reference: ref, idempotencyKey: attempt })
         });
       }catch(e){
+        // The key deliberately stays put. This is the exact case it exists
+        // for: the reader may be holding the amount right now, and pressing
+        // Try again must find THAT payment rather than start another.
         offerRetry((e && e.message) || 'Could not reach the card reader');
         return;
       }
+      forgetAttemptKey();
 
       active = started.id;
       rememberPending({ id: started.id, amountMinor: amountMinor, ref: ref, at: Date.now() });
-      state('Waiting for the customer to tap…', '');
+      // `reused` means the service handed back a payment an earlier press had
+      // already started - so this is not a customer who has yet to tap, it is
+      // one who may have tapped already.
+      state(started.reused ? 'Checking the payment already sent to the reader…'
+                           : 'Waiting for the customer to tap…', '');
       poll = setInterval(check, POLL_MS);
       giveUp = setTimeout(() => offerRetry('No answer from the reader. Try again, or take cash.'), GIVE_UP_MS);
     }
@@ -8144,6 +8203,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const id = active;
       stopTimers();
       active = null;
+      forgetAttemptKey();
       state('Cancelling…', '');
       if(id){
         // Best effort. If this fails the reader clears itself on its own
@@ -8246,7 +8306,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     return { isSet:isSet, get:get, set:set, start:start, cancel:cancel,
              recover:recover, recoveryPlan:recoveryPlan, forgetPending:forgetPending,
-             stop:function(){ stopTimers(); active = null; }, call:call };
+             stop:function(){ stopTimers(); active = null; forgetAttemptKey(); },
+             attemptKeyFor:attemptKeyFor, forgetAttemptKey:forgetAttemptKey, call:call };
   })();
 
   // Only reached once the service has confirmed with SumUp that money moved.

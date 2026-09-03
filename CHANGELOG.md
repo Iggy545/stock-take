@@ -9,6 +9,64 @@ fixes.
 
 ---
 
+## v1.45.0 - 3 September 2026, 12:55
+
+**Pressing "Try the card again" can no longer take the money twice.**
+
+A double tap was never the danger - the till refuses to start a second payment
+while one is open. The danger is narrower and worse: the request goes out, the
+reader is loaded, and the answer never comes back. The iPad sleeps, the wifi
+drops, the browser is killed. All the till knows is that it could not reach the
+reader, so it offers "Try the card again" - and that press used to start a
+second payment for a basket the customer may already have paid for.
+
+### The till now writes down which attempt it is making
+
+A key is written down before the request goes out and sent with it. The payment
+service remembers which payment that key produced, so a retry carrying the same
+key gets the first payment back rather than starting another - and the waiting
+screen says so, because that customer may have tapped already.
+
+The key is dropped the moment the service answers, however it answers: from then
+on the payment has an id and the id is the handle on it. It is dropped again if
+the operator gives up and takes cash. And it only ever applies to the same
+total, for a few minutes - the same total half an hour later is a different
+customer, and answering that one with an old payment would record a sale against
+somebody else's money.
+
+A till still running an older build sends no key and behaves exactly as it did.
+
+### The payment service writes the record down first
+
+It used to load the reader and then write its record. Between those two there
+was a window - the width of one write - in which SumUp held a live payment the
+service had no record of: the till could not ask about it, and the callback was
+turned away. That order is now reversed.
+
+Two smaller things follow. If SumUp answers and refuses, the attempt is deleted
+and the key is free to be used again for a real payment. If SumUp does not
+answer at all, the record deliberately stays, because the reader may be holding
+the amount at that moment.
+
+### A payment that could not be named can now be rescued
+
+If the call that starts a payment never comes back, there is no transaction id,
+and without one SumUp cannot be asked what happened. The callback carries that
+id, so it is now read for that one field - and still not believed: it is used to
+ask SumUp with the shop's own key, and the answer is thrown away unless it is
+for the amount this payment started.
+
+If nothing ever arrives, the payment stops calling itself pending after ten
+minutes and reports that it was never confirmed, which the till already turns
+into *look in the SumUp app* rather than into a sale or a decline it cannot
+support.
+
+Nothing here changes an ordinary card sale. 80 new checks: 57 against the real
+payment service and 23 against the real till code, both suites checked against
+deliberately broken copies of the code they test.
+
+---
+
 ## v1.44.0 - 3 September 2026, 11:37
 
 **Clearing the browser can no longer take the Settings page with it, and the
