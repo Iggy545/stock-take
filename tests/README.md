@@ -23,6 +23,7 @@ node tests/payouts.js index.html
 node tests/undo-guard.js index.html
 node tests/sets.js index.html
 node tests/roles.js index.html
+node tests/card-recovery.js index.html
 ```
 
 Each prints a pass/fail line per check and exits non-zero on failure.
@@ -81,4 +82,22 @@ a hand-written `code#fingerprint` key, so the broken key scheme crashed the run 
 failing a check; and it asked `extrasItems()` whether an emptied item had been dropped,
 which filters empties out and so could never tell. Both are fixed, and only then did all
 six copies fail.
+| `card-recovery.js` | A card payment the page did not live to see the end of: that one still open is KEPT rather than forgotten, that a payment taken while the basket has since changed is never recorded automatically, that an empty basket does not count as a match, and that a payment which can no longer be asked about is reported without deciding either way | v1.42.0 |
 | `roles.js` | The three access levels: that an old bare-name staff list all comes back as **administrator**, that the gate stays off until a staff PIN is set, that nobody-picked is the most restricted rather than the least, and which tabs each role may stand on | v1.41.0 |
+
+`card-recovery.js` slices two blocks, not one: the pure decision, and `recover()`
+around it with a scripted payment service standing in. The second is there because
+the decision is only half of it - an id dropped when it should have been kept is a
+payment nobody will ever ask about again, and no amount of testing the pure part
+would catch that.
+
+It was checked against seven broken copies: a still-open payment forgotten, an
+orphan auto-recorded against a changed basket, an unconfirmable payment quietly
+swallowed, a zero amount matching an empty basket, the record thrown away when the
+shop is offline, being offline read as the payment being gone, and the record
+forgotten every time. All seven produce FAIL lines.
+
+The first attempt crashed on the swallowed-payment copy instead of failing - it read
+`.message` off a plan that no longer had one - which is the same fault `extras.js`
+had, and it takes the rest of the checks down with it. Messages are now read through
+a helper that returns an empty string.

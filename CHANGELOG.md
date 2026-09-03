@@ -9,6 +9,69 @@ fixes.
 
 ---
 
+## v1.42.0 - 3 September 2026, 02:25
+
+**A card payment can no longer be lost when the app closes underneath it, and
+"Try the card again" is no longer a dead button.**
+
+Two faults in the card reader, both found before the Solo was switched on, which
+is the cheapest moment there will ever be to fix them.
+
+**The dead button.** After three minutes of silence the waiting screen offers
+"Try the card again" and "Take cash instead". Pressing the first one did
+nothing at all: the modal closed, no payment started, and nothing said why. The
+give-up path never released the payment it was holding, so starting a new one
+ran into the never-two-at-once guard and returned in silence. It now releases
+it, and tells the reader to stop as well - by then the reader has long since
+timed out on its own, but "long since" is not good enough when the alternative
+is a second payment beginning while the first can still take money.
+
+**The payment nobody could ask about.** The id of a payment in progress lived
+only in a variable. A refresh, a crash, or iOS ending a backgrounded Home Screen
+app took it away, and with it the only handle on a payment that might be about
+to take money - the customer charged, the sale never written down, and nothing
+on the device knowing enough to go and ask. Card records are kept by the payment
+service for two days, so the answer existed; there was simply no longer a
+question to ask it with.
+
+The id is now written down the moment SumUp accepts it, and it is **not** rubbed
+out until the outcome is known and dealt with. Every path that ends a payment
+without an answer - the timeout, Cancel, Take cash instead - deliberately leaves
+it behind. Cancel included: cancelling asks the reader to stop, it cannot un-tap
+a card presented in the second before.
+
+On the next load the till asks the service what happened, and then:
+
+- **Paid, and the basket still matches** - it offers to record the sale, with
+  the code from the card slip. This is the ordinary crash-during-a-tap case, and
+  the basket survives a refresh, so it can be finished properly.
+- **Paid, but the basket has moved on** - it says so and stops. Recording it
+  would write the wrong lines against real money. It names the code so the sale
+  can be rung up by hand or refunded in the SumUp app.
+- **Still open** - it says nothing and keeps the record, to ask again next time.
+- **No longer askable** - it reports it without deciding either way. Only the
+  SumUp app knows, and inventing a sale and hiding one are both wrong.
+
+It is a modal and not a toast on purpose. It is the one message in this app that
+can mean a customer was charged for a sale nobody wrote down, and a toast nobody
+happens to be looking at is the same as silence.
+
+Nothing changed for cash, and a till with no reader address set never sees any of
+this.
+
+`tests/card-recovery.js` is new: 48 checks. The decision itself is pure so a test
+can reach it, and the asking round it is sliced out as well and given a scripted
+payment service - because what is done with the answer is the whole point, and an
+id dropped when it should have been kept is a payment nobody ever asks about
+again. Checked against seven deliberately broken copies: one that forgets a
+payment still open, one that records against a changed basket, one that quietly
+swallows a payment it cannot confirm, one where an empty basket counts as a match,
+one that throws the record away when the shop is offline, one that reads being
+offline as the payment being gone, and one that forgets every time. All seven
+produce FAIL lines and none crashes the run. Suite 793 checks across 21 files.
+
+---
+
 ## v1.41.2 - 3 September 2026, 01:22
 
 **A way out of a staff PIN nobody has, and a PIN field you can actually read.**

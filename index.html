@@ -1692,6 +1692,19 @@
   </div>
 </div>
 
+<!-- A card payment this device never saw the end of. Raised at load, not by
+     anything the operator did, so it says what happened before it asks. -->
+<div class="modal-overlay" id="cardRecoverModal" style="display:none;">
+  <div class="modal">
+    <h2 id="cardRecoverTitle">Unfinished card payment</h2>
+    <div class="folder-hint" id="cardRecoverText" style="margin-bottom:4px;"></div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button class="btn btn-secondary" id="cardRecoverDismiss">Not now</button>
+      <button class="btn btn-primary" id="cardRecoverOk">I understand</button>
+    </div>
+  </div>
+</div>
+
 <!-- Receipt -->
 <div class="modal-overlay" id="receiptModal" style="display:none;">
   <div class="modal">
@@ -4113,9 +4126,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.41.2';
+  const APP_VERSION = '1.42.0';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '01:20';
+  const BUILD_TIME  = '02:25';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7839,10 +7852,35 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
      ----------------------------------------------------------------------- */
   const CardReader = (function(){
     const URL_KEY = 'posCardReaderUrl';
+    const PENDING_KEY = 'posCardPending';
     const POLL_MS = 2000;
     const GIVE_UP_MS = 3 * 60 * 1000;   // reader itself times out well before this
+    const RECOVER_TRIES = 6, RECOVER_GAP_MS = 5000;
 
     let poll = null, giveUp = null, active = null, finishing = false;
+
+    /* ---- the payment that outlives the page --------------------------------
+       `active` is a variable in a closure, so a refresh, a crash, or iOS
+       killing a backgrounded Home Screen app takes it away - and with it the
+       only handle on a payment that may be about to take money. The customer
+       is charged, the sale is never recorded, and nothing on this device knows
+       enough to go and ask.
+
+       So the id is written down as well, the moment SumUp accepts it, and it
+       is NOT rubbed out until the outcome is known and dealt with. Every path
+       that ends a payment without knowing the answer - the give-up timeout,
+       Cancel, Take cash instead - deliberately leaves it behind for recover()
+       to settle on the next load.
+       --------------------------------------------------------------------- */
+    function rememberPending(rec){
+      try{ localStorage.setItem(PENDING_KEY, JSON.stringify(rec)); }catch(e){}
+    }
+    function readPending(){
+      try{ return JSON.parse(localStorage.getItem(PENDING_KEY) || 'null'); }catch(e){ return null; }
+    }
+    function forgetPending(){
+      try{ localStorage.removeItem(PENDING_KEY); }catch(e){}
+    }
 
     function get(){ try{ return localStorage.getItem(URL_KEY)||''; }catch(e){ return ''; } }
     function isSet(){ return !!get(); }
@@ -7871,7 +7909,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }, opts||{}));
       let body = null;
       try{ body = await res.json(); }catch(e){}
-      if(!res.ok) throw new Error((body && body.error) || ('Reader service error ('+res.status+')'));
+      if(!res.ok){
+        // recover() has to tell "this payment is gone for good" (404 - the
+        // service keeps a record for two days) from "I cannot ask right now"
+        // (offline, token not ready), because the first is settled and the
+        // second must be tried again. The message alone cannot carry that.
+        const err = new Error((body && body.error) || ('Reader service error ('+res.status+')'));
+        err.status = res.status;
+        throw err;
+      }
       return body;
     }
 
@@ -7897,8 +7943,28 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(poll){ clearInterval(poll); poll = null; }
       if(giveUp){ clearTimeout(giveUp); giveUp = null; }
     }
+    // Ends the wait badly and RELEASES the payment, so that the two buttons
+    // underneath actually do something. Without the release `active` stayed
+    // set, and "Try the card again" ran straight into start()'s
+    // never-two-at-once guard and returned silently: the modal closed, no
+    // payment began, and nothing said so. A dead button at the one moment it
+    // is needed.
+    //
+    // Releasing means telling the reader to stop as well. By the time the
+    // give-up timeout fires the reader has long since timed out on its own, so
+    // there is normally nothing left to cancel - and "normally" is not good
+    // enough when the alternative is a second payment starting while the first
+    // can still take money.
+    //
+    // What this does NOT do is forget the pending record. This is precisely
+    // the case that record exists for: three minutes of silence can mean the
+    // customer paid and we never heard about it. That is settled by recover()
+    // against the payment service, not guessed at here.
     function offerRetry(message){
       stopTimers();
+      const id = active;
+      active = null;
+      if(id){ call('/checkout/'+id+'/cancel', { method:'POST' }).catch(function(){}); }
       state(message, 'bad');
       document.getElementById('cardWaitCancelRow').style.display = 'none';
       document.getElementById('cardWaitDoneRow').style.display = 'flex';
@@ -7927,6 +7993,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
 
       active = started.id;
+      rememberPending({ id: started.id, amountMinor: amountMinor, ref: ref, at: Date.now() });
       state('Waiting for the customer to tap…', '');
       poll = setInterval(check, POLL_MS);
       giveUp = setTimeout(() => offerRetry('No answer from the reader. Try again, or take cash.'), GIVE_UP_MS);
@@ -7950,9 +8017,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         active = null;
         // Small pause so the "Paid" state is actually seen before the receipt
         // covers it, otherwise the sale appears to complete with no feedback.
-        setTimeout(() => { hide(); finishCardSale(now); }, 700);
+        // Forgotten only AFTER the sale exists, never before: if recording it
+        // were to fail, the record is the one thing that could still put this
+        // right on the next load.
+        setTimeout(() => { hide(); finishCardSale(now); forgetPending(); }, 700);
       }else if(now.status === 'failed'){
         active = null;
+        forgetPending();          // a settled answer - there is nothing to recover
         offerRetry(now.failureReason === 'CANCELLED'
           ? 'Payment cancelled on the reader.'
           : 'The card was declined. Try again, or take cash.');
@@ -7971,11 +8042,102 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // timeout, and nothing has been recorded as sold either way.
         try{ await call('/checkout/'+id+'/cancel', { method:'POST' }); }catch(e){}
       }
+      // The pending record deliberately survives a cancel. Cancelling asks the
+      // reader to stop; it cannot un-tap a card that was presented in the
+      // second before. Asking the service on the next load costs one request
+      // and answers "failed" almost every time - which is exactly the answer
+      // worth having in writing.
       hide();
       document.getElementById('payModal').style.display = 'flex';
     }
 
+    /* ---- settling a payment this page never saw the end of -----------------
+       Everything that decides whether money moved, and whether this till can
+       still put it right, is worked out in recoveryPlan(). It is pure so that
+       a test can get at it: the alternative is a decision about real money
+       that only exists inside a page load nobody can reproduce.
+
+         `rec`  what start() wrote down.
+         `now`  the payment service's answer, or null when it can no longer be
+                asked - the record expires there after two days.
+         `basketMinor` what is in the basket right now, in pence.
+       --------------------------------------------------------------------- */
+    function recoveryPlan(rec, now, basketMinor){
+      if(!rec || !rec.id) return { mode:'none' };
+      const amount = (Number(rec.amountMinor) || 0) / 100;
+      const when = rec.at ? new Date(rec.at) : null;
+      const on = when ? when.toLocaleDateString('en-GB', { day:'numeric', month:'long' }) : '';
+
+      // Never confirmed either way, and no longer askable. Say so plainly
+      // rather than choose one - the SumUp app is the only thing that knows,
+      // and a wrong guess here either invents a sale or hides one.
+      if(!now){
+        return { mode:'unknown', keep:false,
+          title:'A card payment was never confirmed',
+          message:'A card payment of ' + money(amount) + ' was started' + (on ? ' on ' + on : '') +
+                  ' and this till never heard how it ended. Nothing was recorded here. If the ' +
+                  'customer was charged it will be in the SumUp app' + (rec.ref ? ', under receipt ' + rec.ref : '') + '.',
+          okLabel:'I understand' };
+      }
+      // Settled without taking money. Nothing to tell anybody.
+      if(now.status === 'failed') return { mode:'none', keep:false };
+      // Still open at SumUp. The reader will have given up long ago, but it is
+      // not final yet, so keep the record and ask again next time.
+      if(now.status !== 'paid') return { mode:'none', keep:true };
+
+      const code = now.sumupTransactionCode || null;
+      const matches = Number(basketMinor) === Number(rec.amountMinor) && Number(rec.amountMinor) > 0;
+
+      // Paid, and the basket is still exactly what was paid for. This is the
+      // ordinary crash-during-a-tap case and it can be finished properly.
+      if(matches){
+        return { mode:'record', keep:true, result:now,
+          title:'That card payment went through',
+          message:'A card payment of ' + money(amount) + ' was taken but never recorded, because this ' +
+                  'app closed before it could be. The basket still matches it' +
+                  (code ? ', and the card slip says ' + code : '') + '. Record the sale now?',
+          okLabel:'Record the sale' };
+      }
+      // Paid, but the basket has moved on. Completing would record the wrong
+      // lines against real money, so it says what happened and stops.
+      return { mode:'orphan', keep:false,
+        title:'A card payment was taken and not recorded',
+        message:'A card payment of ' + money(amount) + ' went through' + (on ? ' on ' + on : '') +
+                ' and was never recorded here, and the basket no longer matches it so it cannot be ' +
+                'finished automatically. ' + (code ? 'The card slip says ' + code + '. ' : '') +
+                'Ring the sale up as a card sale, or refund it in the SumUp app.',
+        okLabel:'I understand' };
+    }
+
+    // Asks the service what happened, then hands the plan to the page.
+    //
+    // Anything that is not a 404 is worth trying again: at load the sign-in
+    // token is usually not ready yet, and the shop's broadband is the shop's
+    // broadband. Giving up quietly leaves the record where it is, so the next
+    // load asks again - the one outcome that must never happen is deciding
+    // "probably fine" about a payment nobody has confirmed.
+    async function recover(){
+      const rec = readPending();
+      if(!rec || !rec.id || !isSet()) return null;
+
+      let now = null, gone = false;
+      for(let i = 0; i < RECOVER_TRIES; i++){
+        try{ now = await call('/checkout/' + rec.id); break; }
+        catch(e){
+          if(e && e.status === 404){ gone = true; break; }
+          if(i === RECOVER_TRIES - 1) return null;          // leave it for next time
+          await new Promise(r => setTimeout(r, RECOVER_GAP_MS));
+        }
+      }
+      if(!now && !gone) return null;
+
+      const plan = recoveryPlan(rec, now, Math.round(cartFigures().total * 100));
+      if(!plan.keep) forgetPending();
+      return plan;
+    }
+
     return { isSet:isSet, get:get, set:set, start:start, cancel:cancel,
+             recover:recover, recoveryPlan:recoveryPlan, forgetPending:forgetPending,
              stop:function(){ stopTimers(); active = null; }, call:call };
   })();
 
@@ -7997,6 +8159,40 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     openReceipt(txn.id, { fresh: true });
   }
+
+  // ---- the unfinished payment, shown at load ----
+  //
+  // Deliberately a modal and not a toast. It is the one message in this app
+  // that can mean a customer has been charged for a sale nobody wrote down,
+  // and a toast that nobody happened to be looking at is the same as silence.
+  let recoverPlan = null;
+  function showCardRecovery(plan){
+    if(!plan || plan.mode === 'none') return;
+    recoverPlan = plan;
+    document.getElementById('cardRecoverTitle').textContent = plan.title;
+    document.getElementById('cardRecoverText').textContent = plan.message;
+    document.getElementById('cardRecoverOk').textContent = plan.okLabel;
+    // Only the record-the-sale case is a real choice; the others are being
+    // told something, and offering "Not now" would invite it to be ignored.
+    document.getElementById('cardRecoverDismiss').style.display =
+      plan.mode === 'record' ? '' : 'none';
+    document.getElementById('cardRecoverModal').style.display = 'flex';
+  }
+  document.getElementById('cardRecoverDismiss').addEventListener('click', () => {
+    // Left in place on purpose: declining to record it now is not the same as
+    // deciding it never happened, so the next load asks again.
+    document.getElementById('cardRecoverModal').style.display = 'none';
+    recoverPlan = null;
+  });
+  document.getElementById('cardRecoverOk').addEventListener('click', () => {
+    const plan = recoverPlan;
+    recoverPlan = null;
+    document.getElementById('cardRecoverModal').style.display = 'none';
+    if(plan && plan.mode === 'record'){
+      finishCardSale(plan.result);
+      CardReader.forgetPending();
+    }
+  });
 
   document.getElementById('cardWaitCancel').addEventListener('click', () => CardReader.cancel());
   document.getElementById('cardWaitRetry').addEventListener('click', () => {
@@ -12887,6 +13083,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   initPhotos();   // migrate/hydrate photos, then trigger sync auto-connect
   // Safety net: if IndexedDB ever stalls, still bring sync up shortly after.
   setTimeout(maybeAutoConnectSync, 4000);
+  // Was a card payment left in the air last time this app was open? Asking
+  // needs a sign-in token, which arrives with sync, so this waits for it and
+  // then retries on its own. Nothing happens on a till with no reader set up.
+  setTimeout(() => { CardReader.recover().then(showCardRecovery).catch(() => {}); }, 6000);
 })();
 </script>
 </body>
