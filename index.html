@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Soulful Angels — Till &amp; Stock</title>
+<!-- Installed, not a tab. This is about STORAGE, not about looking like an app:
+     a browser is free to throw away the site data of a page it thinks is just
+     another tab, and an installed app is the signal that stops it. On the shop
+     computer it is what lets navigator.storage.persist() below be granted; on
+     iOS an app on the Home Screen keeps its own storage, away from Safari's,
+     and is exempt from the roughly-seven-day clear-out.
+
+     No service worker, deliberately - see the v2 review note in the change
+     register. A manifest changes where the data lives; a service worker would
+     change how the app UPDATES, and the 10-minute Pages cache plus "only
+     updates on force-quit" is already enough to think about. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#faf6f0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="SA Till">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
 <style>
   :root{
     --ink:#2b2420;
@@ -1012,6 +1030,7 @@
       <input type="file" id="importItemsInput" accept="application/json,.json" style="display:none;">
       <button class="btn btn-secondary" id="exportExtrasBtn" style="width:100%;margin-top:8px;">🖼 Export extra photos</button>
       <div class="storage-note" id="extrasNote"></div>
+      <div class="storage-note" id="durableNote"></div>
     </div>
     <div class="card">
       <div class="quick-sell-head">Team sync</div>
@@ -4137,9 +4156,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.43.0';
+  const APP_VERSION = '1.44.0';
   const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '09:23';
+  const BUILD_TIME  = '11:37';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -4789,6 +4808,79 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       return Math.round(raw.length / 1024);
     }catch(e){ return 0; }
   }
+  /* ---- durable storage ---------------------------------------------------
+     A browser may throw away the site data of a page it considers disposable:
+     iOS clears the storage of a site it has not seen for about a week, and
+     desktop browsers evict under disk pressure. Everything the till knows
+     lives in that storage.
+
+     Two things change it, and neither is code that runs here:
+       - being INSTALLED (Home Screen on iOS, Install app on the computer),
+         which is what the manifest at the top of this file is for; and
+       - asking, below, which the desktop browsers grant to an installed app
+         and Safari does not implement at all.
+
+     So the ask is best-effort by design and its failure is not a problem to
+     report - it is one of three normal answers. What matters is that the
+     Settings line then tells the truth about which of them this device got,
+     because "back up weekly" is advice with a very different weight on a
+     device that clears itself.
+
+     None of this protects against a person deliberately clearing site data,
+     or against the device being lost or replaced. The weekly backup is still
+     the only answer to those. -------------------------------------------- */
+
+  // 'granted'     - asked and got it; the browser will not clear it on its own
+  // 'refused'     - asked and was turned down
+  // 'unsupported' - the browser has no such notion (Safari today)
+  // 'unknown'     - not asked yet
+  var durableState = 'unknown';
+
+  // Home Screen app or desktop install, rather than a tab.
+  function isInstalledApp(){
+    try{
+      if(navigator.standalone === true) return true;   // iOS
+      if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    }catch(e){}
+    return false;
+  }
+
+  // What the Settings line says. Pure, so the wording can be checked without a
+  // browser -- it is the app's own statement about whether the data on this
+  // device is safe, and it must never overclaim.
+  function durableNote(state, installed){
+    if(state === 'granted')
+      return '🔒 Storage is protected — this browser will not clear it on its own.';
+    if(state === 'unsupported')
+      return installed
+        ? '🔒 Installed app — it keeps its own storage, separate from the browser.'
+        : '⚠️ Running as a browser tab. Add it to the Home Screen so its data is kept apart from the browser.';
+    if(state === 'refused')
+      return installed
+        ? '⚠️ This browser would not protect the storage. Keep to the weekly backup.'
+        : '⚠️ Running as a browser tab, and the storage is not protected. Install it, and keep to the weekly backup.';
+    return '';   // not asked yet — say nothing rather than guess
+  }
+
+  function refreshDurableNote(){
+    var el = document.getElementById('durableNote');
+    if(!el) return;
+    var text = durableNote(durableState, isInstalledApp());
+    el.textContent = text;
+    el.className = 'storage-note' + (text.indexOf('⚠️') === 0 ? ' warn' : '');
+  }
+
+  // Asked once, on load. Never blocks anything and never shows an error: a
+  // browser that says no leaves the app exactly as it was.
+  (async function askForDurableStorage(){
+    try{
+      if(!navigator.storage || !navigator.storage.persist){ durableState = 'unsupported'; }
+      else if(await navigator.storage.persisted()){ durableState = 'granted'; }
+      else { durableState = (await navigator.storage.persist()) ? 'granted' : 'refused'; }
+    }catch(e){ durableState = 'unsupported'; }
+    try{ refreshDurableNote(); }catch(e){}
+  })();
+
   function loadSales(){
     try{
       const raw = localStorage.getItem(SALES_KEY);
@@ -4840,6 +4932,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         note.className = kb > 4000 ? 'storage-note warn' : 'storage-note';
       }
     }
+    try{ refreshDurableNote(); }catch(e){}
   }
   function showToast(msg, type){
     const t = document.getElementById('toast');
@@ -9565,6 +9658,10 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   });
 
   // ---- Supplier payout settings ----
+  // Assigned inside the initialiser below, and called again after a restore --
+  // the percentages are read once into the boxes, so without this a restored
+  // fee is in force but the Settings page still shows the old figure.
+  let refreshPayoutInputs = function(){};
   (function initPayoutSettings(){
     const input = document.getElementById('cardFeeInput');
     const web   = document.getElementById('webFeeInput');
@@ -9577,10 +9674,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         + '% to the supplier, website sales at ' + (100 - webFeePct()).toFixed(2) + '%.'
         + (c ? ' The shop then keeps ' + c + '% of every sale.' : '');
     }
-    input.value = cardFeePct();
-    web.value   = webFeePct();
-    comm.value  = shopCommissionPct();
-    show();
+    refreshPayoutInputs = function(){
+      input.value = cardFeePct();
+      web.value   = webFeePct();
+      comm.value  = shopCommissionPct();
+      show();
+    };
+    refreshPayoutInputs();
     document.getElementById('cardFeeSaveBtn').addEventListener('click', () => {
       const v = parseFloat(input.value);
       const w = parseFloat(web.value);
@@ -12193,7 +12293,109 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     reader.readAsText(file);
   });
 
-  const BACKUP_VERSION = 1;
+  // Version 2 adds `settings`. A v1 file restores exactly as it always did --
+  // it simply carries no settings block, and none are touched.
+  const BACKUP_VERSION = 2;
+
+  /* ---- the settings a backup carries -------------------------------------
+     Up to v1.43.0 a backup held the stock, the sales, the makers, the counters
+     and three settings that happen to print on a receipt. Everything else on
+     the Settings page was on the device and nowhere else, which made a wiped
+     or replaced till a re-typing job -- and the printed guide said backups held
+     "settings", which they did not.
+
+     The one with teeth is the payout arithmetic. Restoring a backup left the
+     card fee, the website fee and the shop's commission at their defaults, so
+     the payout report came back quietly wrong -- 0% commission reads as a
+     working number, not as a missing one, and it is money owed to real people.
+
+     THIS TABLE IS THE WHOLE POLICY. Three scopes:
+
+       shop   - the same on every till. Always written back.
+       device - belongs to the device that made the file. Carried so a backup
+                can be told apart from another device's, NEVER written back:
+                two tills sharing a receipt prefix would issue duplicate
+                receipt numbers, silently.
+       sync   - how to find the workspace. Written back ONLY onto a device that
+                has none, which is exactly the cleared-or-new device this is
+                for. It cannot repoint a working till at another workspace,
+                which is the hazard in the team-code notes.
+
+     What is deliberately NOT here:
+
+       stockTakeStaffPin  - the administrator PIN. A shop iPad has already been
+                            locked out of its own Settings by a PIN nobody
+                            could produce; restoring one from a file months old
+                            invites that again. Left out, the roles gate simply
+                            stays off until somebody sets a PIN, which is the
+                            safe direction. It is not a security boundary
+                            either way -- see the ROLES note.
+       stockTakeSyncOn    - a restore must never make a device start syncing on
+                            its own. Somebody presses the button.
+       posCart, posCardPending, the banner snoozes, the folder and focus
+       positions, stockTakeClientId, the sync watermarks - all either mid-job
+       state or this device's own bookkeeping, and wrong on another device.
+
+     Values are written back as the strings they were. Every reader of these is
+     already defensive about rubbish (the fee getters fall back to a default,
+     the staff and promo parsers to empty), so validating here would be a
+     second, drifting copy of rules that already exist. ------------------- */
+  const BACKUP_SETTINGS = [
+    { key: 'posCardFeePct',        scope: 'shop'   },
+    { key: 'posWebFeePct',         scope: 'shop'   },
+    { key: 'posShopCommissionPct', scope: 'shop'   },
+    { key: 'stockTakeStaff',       scope: 'shop'   },
+    { key: 'stockTakePromos',      scope: 'shop'   },
+    { key: 'posCardReaderUrl',     scope: 'shop'   },
+    { key: 'posTillId',            scope: 'device' },
+    { key: 'stockTakeSyncCfg',     scope: 'sync'   },
+    { key: 'stockTakeSyncTeam',    scope: 'sync'   },
+    { key: 'stockTakeSyncPin',     scope: 'sync'   },
+    { key: 'stockTakeSyncEmail',   scope: 'sync'   },
+  ];
+
+  // Read every setting worth keeping. `read(key)` returns the stored string or
+  // null; a key that has never been set is left out rather than stored as null,
+  // so "not set on that device" and "set to empty" stay different things.
+  function collectSettings(read){
+    const out = {};
+    BACKUP_SETTINGS.forEach(s => {
+      let v = null;
+      try{ v = read(s.key); }catch(e){ v = null; }
+      if(typeof v === 'string') out[s.key] = v;
+    });
+    return out;
+  }
+
+  // Decide what a restore may write back. Returns the writes to make and, for
+  // everything held back, the reason -- so the person can be told rather than
+  // left wondering why the till id did not travel.
+  //
+  // The sync group is all-or-nothing on purpose: half of it (a team code with
+  // the wrong project, say) points a device at a workspace that does not exist,
+  // which looks exactly like an empty shop.
+  function settingsToApply(incoming, read){
+    const writes = {}, skipped = [];
+    if(!incoming || typeof incoming !== 'object') return { writes, skipped, count: 0 };
+
+    const has = (k) => { try{ const v = read(k); return typeof v === 'string' && v !== ''; }catch(e){ return false; } };
+    const deviceHasSync = has('stockTakeSyncCfg') || has('stockTakeSyncTeam');
+
+    BACKUP_SETTINGS.forEach(s => {
+      const v = incoming[s.key];
+      if(typeof v !== 'string') return;                 // absent, or a tampered file
+      if(s.scope === 'device'){
+        skipped.push({ key: s.key, why: 'belongs to the device that made the backup' });
+        return;
+      }
+      if(s.scope === 'sync' && deviceHasSync){
+        skipped.push({ key: s.key, why: 'this device is already set up for team sync' });
+        return;
+      }
+      writes[s.key] = v;
+    });
+    return { writes, skipped, count: Object.keys(writes).length };
+  }
 
   // On phones (iOS Safari, Chrome/Android) navigator.share can hand a file
   // straight to the OS share sheet — AirDrop it to a laptop, email it,
@@ -12261,7 +12463,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       shopFooter: getShopFooter(),
       items: items,
       sales: sales,
-      photos: photosIncluded   // so a restore can say what the file actually holds
+      photos: photosIncluded,  // so a restore can say what the file actually holds
+      // The Settings page. shopName / shopFooter / receiptSeq above are the
+      // three that were already carried and stay where they are, so a v1.43.0
+      // build can still read this file.
+      settings: collectSettings(k => { try{ return localStorage.getItem(k); }catch(e){ return null; } })
     };
 
     const filename = `stock-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -12340,6 +12546,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       const incomingPhotos = photoCount(incomingItems);
       const havePhotos = photoCount();
 
+      // Worked out here rather than in the callback so the question can say
+      // what the settings will do before it is answered, not after.
+      const plan = settingsToApply(
+        data.settings,
+        k => { try{ return localStorage.getItem(k); }catch(e){ return null; } }
+      );
+
       askConfirm(
         'Restore this backup?',
         `The backup from ${savedOn} holds ${itemCount} item${itemCount===1?'':'s'}, `
@@ -12349,6 +12562,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             : `This device has no stock yet, so nothing will be lost.`)
         + (incomingPhotos < havePhotos
             ? ` The backup carries fewer photos than this device has (${havePhotos}); the ones already here are kept.`
+            : '')
+        + (plan.count
+            ? ` It also carries ${plan.count} setting${plan.count===1?'':'s'} — the payout percentages, the staff list and the rest — which replace this device's.`
+            : '')
+        + (data.settings && !plan.count
+            ? ` Its team-sync details are held back — this device is already set up for sync.`
             : ''),
         'Restore',
         () => {
@@ -12391,14 +12610,52 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             try{ localStorage.setItem(FOOT_KEY, data.shopFooter); }catch(e){}
           }
 
+          // The rest of the Settings page, decided above. A v1 file has no
+          // `settings` block, so this writes nothing and the restore behaves
+          // exactly as it always did.
+          Object.keys(plan.writes).forEach(k => {
+            try{ localStorage.setItem(k, plan.writes[k]); }catch(e){}
+          });
+          // The staff list is held in a variable as well as in storage, so it
+          // has to be re-read or the roles on screen are the old device's.
+          if(plan.writes[STAFF_KEY] !== undefined){
+            try{
+              const raw = JSON.parse(plan.writes[STAFF_KEY]);
+              staff = (Array.isArray(raw) ? raw : []).map(s => {
+                if(typeof s === 'string') return { name: s, role: 'admin' };
+                if(s && typeof s.name === 'string') return { name: s.name, role: ROLES[s.role] ? s.role : 'admin' };
+                return null;
+              }).filter(Boolean);
+            }catch(e){}
+          }
+          if(plan.writes[PROMO_KEY] !== undefined){
+            try{ promos = JSON.parse(plan.writes[PROMO_KEY]) || {}; }catch(e){ promos = {}; }
+          }
+
           renderSession();
           renderList();
           renderSold();
           renderMakerUi();
+          // Repaint the Settings page. Each of these reads its value once at
+          // startup, so a restored figure is otherwise in force while the box
+          // beside it still shows the old one.
+          try{ refreshPayoutInputs(); }catch(e){}
+          try{ renderStaffUi(); }catch(e){}
+          try{ renderPromoList(); }catch(e){}
+          try{
+            const cr = document.getElementById('cardReaderUrlInput');
+            if(cr) cr.value = CardReader.get();
+            renderCardReaderNote();
+          }catch(e){}
+
           // saveItems() has just run reconcilePhotos(), which puts back any photo
           // the file didn't carry, so count again rather than quoting the file.
           const photosAfter = photoCount();
-          showToast(`Restored ${itemCount} item${itemCount===1?'':'s'}, ${photosAfter} photo${photosAfter===1?'':'s'}`, 'success');
+          showToast(
+            `Restored ${itemCount} item${itemCount===1?'':'s'}, ${photosAfter} photo${photosAfter===1?'':'s'}`
+            + (plan.count ? `, ${plan.count} setting${plan.count===1?'':'s'}` : ''),
+            'success'
+          );
         }
       );
     };

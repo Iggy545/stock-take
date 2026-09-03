@@ -9,6 +9,78 @@ fixes.
 
 ---
 
+## v1.44.0 - 3 September 2026, 11:37
+
+**Clearing the browser can no longer take the Settings page with it, and the
+till now asks the browser not to clear itself in the first place.**
+
+The worry this answers was put plainly: *clearing the web browser clears all the
+till information.* Half of that was already untrue and half of it was worse than
+feared, so both halves are dealt with here.
+
+**The stock was never the exposed part.** With team sync on, every item and every
+sale is in Firestore, and a wiped device pulls the lot back. What was on the
+device and nowhere else was the Settings page - and the file that is supposed to
+protect a device carried three of its settings and left the rest behind.
+
+### The Settings page now travels in the backup
+
+The one with teeth is the payout arithmetic. Restoring a backup used to leave
+the card fee, the website fee and the shop's commission at their defaults, so
+the supplier report came back quietly wrong - and 0% commission reads as a
+working number rather than a missing one. Somebody hands out real money on that
+report.
+
+A backup now also carries the staff list, the promotion codes, the card reader
+address, and the team-sync details. It is version 2; a v1 file restores exactly
+as it always did.
+
+Three things are deliberately held back, and the restore says so rather than
+doing it quietly:
+
+- **The till id** is never written back. It is the receipt-number prefix, so two
+  devices sharing one would issue duplicate receipt numbers, silently.
+- **The team-sync details** land only on a device that has none - which is the
+  wiped-or-new device this is for. They cannot repoint a working till at another
+  workspace.
+- **The administrator PIN** is not in the file at all. A shop iPad has already
+  been locked out of its own Settings by a PIN nobody could produce; restoring
+  one from a file months old invites that again. Without it the roles gate stays
+  off until somebody sets a PIN, which is the safe direction.
+
+**This also corrects the printed guide**, which said a backup held "settings".
+Now it does.
+
+### Installed, not a tab
+
+The app has a manifest and its own icons, so it installs properly on the shop
+computer and keeps the Soulful Angels mark on the Home Screen instead of a
+screenshot of the page.
+
+This is about **storage**, not about looking like an app. A browser is free to
+throw away the site data of a page it thinks is just another tab: iOS clears the
+storage of a site it has not seen for about a week, and desktop browsers evict
+under disk pressure. An installed app is the signal that stops that - on iOS a
+Home Screen app keeps its own storage, away from Safari's, and on the computer
+it is what lets the app ask for its storage to be kept. It asks on every load.
+
+**No service worker, deliberately.** A manifest changes where the data lives; a
+service worker would change how the app updates, and the Pages cache plus "only
+updates on force-quit" is already enough to think about.
+
+Settings now says which of the three answers this device got, because "back up
+weekly" carries a very different weight on a device that clears itself. None of
+it is claimed as safety: **a person deliberately clearing site data, or a lost
+or replaced device, beats all of this, and the weekly backup is still the only
+answer to those.**
+
+### Under the hood
+
+`tests/settings-backup.js`, 43 new checks - the table is checked from both ends,
+what must be carried and what must never be. **860 checks across 23 files.**
+
+---
+
 ## v1.43.0 - 3 September 2026, 09:23
 
 **The till now asks for its weekly backup, and speaks up for the photographs
