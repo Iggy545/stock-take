@@ -220,6 +220,13 @@
      It has to stand out from a working one rather than blend in with it. */
   .deal-badge.broken{color:var(--danger);border-color:var(--danger);}
   .deal-badge.ended{color:var(--muted);}
+  /* The offer written out on the row itself. A `title` tooltip is invisible on
+     an iPad - there is no hover, and iOS does not show them at all - so on the
+     shop's own till the badge could say DEAL while nothing on screen said WHICH
+     deal or what it cost. */
+  .item-offer{font-size:11.5px;font-weight:600;color:var(--clay-dark);margin-top:2px;line-height:1.4;}
+  .item-offer.set{color:var(--moss-dark);}
+  .item-offer.bad{color:var(--danger);}
 
   /* Weekly CSV export reminder */
   .export-banner{
@@ -4212,9 +4219,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.47.1';
+  const APP_VERSION = '1.48.0';
   const BUILD_DATE  = '6 Sept 2026';
-  const BUILD_TIME  = '18:02';
+  const BUILD_TIME  = '18:34';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5580,8 +5587,14 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(offersOnly && !inAnOffer(bc)) return false;
       if(!q) return true;
       const it = items[bc];
+      // The deal's NAME is searchable too. Without it, typing the name of an
+      // offer found only the items that happen to be called that - which is a
+      // coincidence of naming, not an answer, and the shop's own way of
+      // referring to a group ("the autumn table") found nothing at all.
+      const deal = dealOf[bc];
       return it.name.toLowerCase().includes(q) || bc.toLowerCase().includes(q)
-          || itemFolder(it).toLowerCase().includes(q);
+          || itemFolder(it).toLowerCase().includes(q)
+          || (deal && deal.name.toLowerCase().includes(q));
     });
 
     refreshFolderOptions();
@@ -5626,8 +5639,27 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
       // While the list is flat, show where the item lives - true of a search
       // and of the offers filter, which gathers items from all over the shop.
-      const folderTag = ((q || offersOnly) && itemFolder(it))
+      const flat = !!(q || offersOnly);
+      const folderTag = (flat && itemFolder(it))
         ? ` · 📁 ${escapeHtml(itemFolder(it))}` : '';
+
+      // The offer in words, not just a badge with a tooltip nobody on a tablet
+      // can open. Shown in the FLAT lists - a search or the offers filter, both
+      // of which mean somebody is looking for a particular thing - and always
+      // when a deal has a problem, because that is the case that has to explain
+      // itself wherever it turns up. The ordinary folder view stays clean.
+      const sr = setOf[bc], dr = dealOf[bc];
+      const drBad = !!(dr && (dr.conflict || promoExpired(dr.expires)));
+      let offerLine = '';
+      if(sr && flat){
+        offerLine += `<div class="item-offer set">🎁 ${escapeHtml(setRuleName(sr))} — ${money(sr.price)}</div>`;
+      }
+      if(dr && (flat || drBad)){
+        let t = `${escapeHtml(dr.name)} — any ${dr.pick} for ${money(dr.price)}`;
+        if(dr.conflict) t += ' — NOT APPLYING, its items disagree about the terms';
+        else if(promoExpired(dr.expires)) t += ` — ended ${escapeHtml(dr.expires)}`;
+        offerLine += `<div class="item-offer${drBad ? ' bad' : ''}">🏷 ${t}</div>`;
+      }
 
       const picked = selectMode && bulkPicked[bc];
       return `
@@ -5638,6 +5670,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             <div style="min-width:0;">
               <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}${dealBadgeHtml(dealOf[bc])}${webBadgeHtml(bc)}</div>
               <div class="item-meta">Made by ${escapeHtml(it.maker||'—')} · Expected ${it.qty}${folderTag}</div>
+              ${offerLine}
               <div class="item-price">${priceLine}</div>
               <div class="expected">${diffLabel}</div>
             </div>

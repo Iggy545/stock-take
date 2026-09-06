@@ -613,5 +613,80 @@ function groupSorted(bcs, m) {
         src.indexOf('if(q || offersOnly){') > -1);
 }
 
+
+/* ---------- 13. finding and reading an offer in the Stock list ---------- */
+// The badge carries the offer's name and terms in a `title` tooltip, which on
+// the shop's own iPad is invisible: there is no hover and iOS does not show
+// them. So the list has to say it in words, and the search has to find an offer
+// by the name the shop actually calls it.
+console.log('\nReading an offer without a tooltip');
+
+// The expressions renderList uses to decide what a row says.
+function flatView(q, offersOnly) { return !!(q || offersOnly); }
+function dealIsBad(r) { return !!(r && (r.conflict || ctx.promoExpired(r.expires))); }
+function saysOffer(r, flat) { return !!(r && (flat || dealIsBad(r))); }
+
+{
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  const r = ctx.dealRuleFor('A');
+  check('a healthy deal stays quiet while browsing folders',
+        saysOffer(r, flatView('', false)) === false);
+  check('but spells itself out under the offers filter',
+        saysOffer(r, flatView('', true)) === true);
+  check('and in a search', saysOffer(r, flatView('autumn', false)) === true);
+}
+{
+  // The case that has to explain itself wherever it appears: somebody may never
+  // press the filter, and a red badge alone does not say WHICH deal is broken.
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  ctx.items.C.dealPrice = 22;
+  const r = ctx.dealRuleFor('A');
+  check('a BROKEN deal explains itself even in the folder view',
+        saysOffer(r, flatView('', false)) === true);
+  check('and is flagged bad', dealIsBad(r) === true);
+}
+{
+  stock();
+  deal(['A', 'B'], 'Autumn Table', 2, 20, '2020-01-01');
+  EXPIRED = true;
+  const r = ctx.dealRuleFor('A');
+  check('so does an expired one', saysOffer(r, flatView('', false)) === true);
+  EXPIRED = false;
+}
+
+// Searching by the name the shop uses for the group.
+function matchesSearch(bc, q, dealOf) {
+  const it = ctx.items[bc], d = dealOf[bc];
+  return it.name.toLowerCase().includes(q) || bc.toLowerCase().includes(q)
+      || String(it.folder || '').toLowerCase().includes(q)
+      || (d && d.name.toLowerCase().includes(q));
+}
+{
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  const dealOf = {};
+  ctx.dealRules().forEach(r => r.members.forEach(m => { if (!dealOf[m]) dealOf[m] = r; }));
+  const hit = q => Object.keys(ctx.items).filter(bc => matchesSearch(bc, q, dealOf));
+  check('typing the offer name finds its members', hit('autumn table').length === 3,
+        JSON.stringify(hit('autumn table')));
+  check('and only those', ['A', 'B', 'C'].every(bc => hit('autumn table').indexOf(bc) > -1));
+  check('part of the name works too', hit('autumn').length === 3);
+  check('an unrelated word still finds nothing', hit('zzz').length === 0);
+  check('and searching by item name is unharmed', hit('pendant').length === 1);
+}
+
+// And the shipped source still does it these ways.
+{
+  const src = HTML;
+  check('renderList still searches the deal name',
+        src.indexOf('|| (deal && deal.name.toLowerCase().includes(q));') > -1);
+  check('and still writes the offer onto the row',
+        src.indexOf('class="item-offer') > -1);
+  check('and still explains a bad deal outside the flat lists',
+        src.indexOf('if(dr && (flat || drBad)){') > -1);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

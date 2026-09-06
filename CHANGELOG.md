@@ -9,6 +9,33 @@ fixes.
 
 ---
 
+## v1.48.0 - 6 September 2026, 18:34
+
+**You can now read an offer in the stock list, and search for one by name.**
+
+The DEAL badge carried the offer's name and terms in a hover tooltip. On the
+shop's iPad there is no hover and iOS does not show tooltips at all, so on the
+one device that matters the badge said DEAL and nothing on screen said which
+deal or what it cost.
+
+- **The offer is written on the row now**, in words: *Kids Earrings - any 2 for
+  £5.00*, or *Paired Ring + Paired Bangle - £45.00* for a set. It appears in
+  the flat lists - a search, or the tag button - where you are looking for a
+  particular thing, and the ordinary folder view stays clean.
+- **A deal with a problem explains itself everywhere**, folder view included:
+  *Spring Table - any 2 for £25.00 - NOT APPLYING, its items disagree about the
+  terms*, in red. Somebody may never press the tag button, and a red badge on
+  its own does not say which offer is broken.
+- **Searching finds a deal by its name.** Typing *Spring Table* finds its
+  members even though no item is called that. Before, searching an offer's name
+  found only the items that happened to be named after it, which is a
+  coincidence rather than an answer.
+
+14 more checks in `tests/deals.js`, three of which hold the shipped source
+against the copies the test reasons about.
+
+---
+
 ## v1.47.1 - 6 September 2026, 18:02
 
 **Setting a deal refused the commonest deal there is.**
