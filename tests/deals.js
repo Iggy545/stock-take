@@ -37,6 +37,12 @@ const PRICING = slice(
   '  function renderTill(){',
   'the set pricing, deal pricing and basket totals');
 
+// The stock-list badge sits with the other badges, well away from the pricing.
+const BADGE = slice(
+  '  // The DEAL badge, beside SET.',
+  '  function webTodos(){',
+  'the DEAL badge');
+
 // promoExpired is deliberately settable: expiry is one of the things being
 // checked, and the real one lives outside this block.
 let EXPIRED = false;
@@ -47,9 +53,12 @@ const ctx = {
   round2: n => Math.round((Number(n) || 0) * 100) / 100,
   promoExpired: () => EXPIRED,
   money: n => '£' + (Math.round((Number(n) || 0) * 100) / 100).toFixed(2),
+  escapeAttr: v => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                            .replace(/</g, '&lt;').replace(/>/g, '&gt;'),
 };
 vm.createContext(ctx);
-vm.runInContext(PRICING + `
+vm.runInContext(PRICING + BADGE + `
+this.dealBadgeHtml = dealBadgeHtml;
 this.dealKey = dealKey; this.dealRules = dealRules; this.dealRuleFor = dealRuleFor;
 this.dealRuleName = dealRuleName; this.basketOffers = basketOffers;
 this.setMatches = setMatches; this.cartFigures = cartFigures;
@@ -446,6 +455,60 @@ console.log('\nSet prices still work the old way');
   check('setMatches still returns a per-line saving', sum(sm.disc) === 14);
   check('and what was applied', sm.applied.length === 1 && sm.applied[0].count === 1);
   check('with no deal fields anywhere near it', sm.dealLine === undefined);
+}
+
+/* ---------- 11. the stock-list badge ---------- */
+// The operator's guide tells staff that if a deal does not come off they should
+// tell the owner, "who can put the deal right in Stock". That promise is only
+// worth anything if the Stock list actually SHOWS which deal is broken - so the
+// badge has to have more than one thing it can say.
+console.log('\nThe DEAL badge in the stock list');
+{
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  const r = ctx.dealRuleFor('A');
+  const html = ctx.dealBadgeHtml(r);
+  check('an item in a deal gets a badge', html.indexOf('deal-badge') > -1, html);
+  check('it says DEAL', html.indexOf('DEAL') > -1);
+  check('a working one is not marked broken', html.indexOf('broken') === -1);
+  check('nor ended', html.indexOf('ended') === -1);
+  check('the tooltip names the offer', html.indexOf('Autumn Table') > -1);
+  check('and its terms', html.indexOf('any 2 for') > -1, html);
+  check('and how many items are in it', html.indexOf('(3 items)') > -1, html);
+}
+{
+  stock();
+  check('an item in no deal gets no badge', ctx.dealBadgeHtml(null) === '');
+}
+{
+  // The one that matters: the case the counter is told to report.
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  ctx.items.C.dealPrice = 22;
+  const html = ctx.dealBadgeHtml(ctx.dealRuleFor('A'));
+  check('a deal whose items disagree is badged BROKEN', html.indexOf('broken') > -1, html);
+  check('and says so in the tooltip', /NOT APPLYING/.test(html), html);
+  check('and tells the owner how to fix it', /set the deal again/i.test(html), html);
+}
+{
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20, '2020-01-01');
+  EXPIRED = true;
+  const html = ctx.dealBadgeHtml(ctx.dealRuleFor('A'));
+  check('an expired deal is still badged, so it can be found and cleared',
+        html.indexOf('deal-badge') > -1);
+  check('but marked as ended', html.indexOf('ended') > -1, html);
+  check('with the date it ended', html.indexOf('2020-01-01') > -1, html);
+  EXPIRED = false;
+}
+{
+  // A tag with a quote in it must not be able to break out of the attribute.
+  stock();
+  deal(['A', 'B'], 'Bob"s <b>Deal</b>', 2, 20);
+  const html = ctx.dealBadgeHtml(ctx.dealRuleFor('A'));
+  check('a tag cannot break out of the title attribute',
+        html.indexOf('Bob"s') === -1 && html.indexOf('<b>') === -1, html);
+  check('it is escaped instead', html.indexOf('&quot;') > -1 && html.indexOf('&lt;b&gt;') > -1);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

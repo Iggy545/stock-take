@@ -9,6 +9,36 @@ fixes.
 
 ---
 
+## v1.46.1 - 6 September 2026, 17:24
+
+**A DEAL badge in the stock list, beside the SET one.**
+
+Until now the only place a deal showed itself was the basket, which meant the
+one person who needs to check a deal is set up correctly — whoever set it up —
+had no way to see it. Every item in a deal now carries a **DEAL** badge in the
+stock list and in the tap-to-add list, and holding a finger on it names the
+offer, its terms and how many items are in it.
+
+It has three states on purpose, because a badge that only ever means "fine"
+would hide the two cases somebody actually has to find:
+
+- **Blue** — a working deal.
+- **Grey** — a deal whose end date has gone by. Still badged, so the items can
+  be found and cleared rather than quietly carrying a dead tag.
+- **Red, with a warning sign** — the members disagree about the terms, so the
+  till will not apply it at the counter. The tooltip says so and says what to
+  do: tick them all and set the deal again.
+
+That last one closes a loop. The operator's guide tells staff that if a deal
+does not come off they should charge the ordinary prices and tell the owner,
+"who can put the deal right in Stock" — and until now the stock list gave the
+owner nothing to go on.
+
+16 more checks in `tests/deals.js`, including that a deal tag cannot break out
+of the tooltip attribute.
+
+---
+
 ## v1.46.0 - 6 September 2026, 16:29
 
 **Any 2 of these 12 for £20 — mix-and-match deals.**

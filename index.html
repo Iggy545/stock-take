@@ -208,6 +208,18 @@
     border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:5px;
     vertical-align:1px;
   }
+  /* A deal borrows the set badge's shape and takes its own colour, so SET and
+     DEAL are told apart down a long list without reading either word. */
+  .deal-badge{
+    display:inline-block;font-size:10px;font-weight:700;color:var(--clay-dark);
+    border:1px solid var(--line);border-radius:6px;padding:1px 5px;margin-left:5px;
+    vertical-align:1px;
+  }
+  /* A deal its own members disagree about will not apply at the counter, and
+     THIS is where it gets fixed - the operator's guide sends the owner here.
+     It has to stand out from a working one rather than blend in with it. */
+  .deal-badge.broken{color:var(--danger);border-color:var(--danger);}
+  .deal-badge.ended{color:var(--muted);}
 
   /* Weekly CSV export reminder */
   .export-banner{
@@ -4203,9 +4215,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.46.0';
+  const APP_VERSION = '1.46.1';
   const BUILD_DATE  = '6 Sept 2026';
-  const BUILD_TIME  = '16:29';
+  const BUILD_TIME  = '17:24';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5072,6 +5084,28 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return `<span class="web-badge${due ? ' due' : ''}" title="${due ? 'Needs changing on the website' : 'Sells on the website'}">🌐</span>`;
   }
 
+  // The DEAL badge, beside SET. Three states, because a badge that only ever
+  // means "fine" would hide the two cases somebody actually needs to find:
+  // a deal that has run out of days, and one whose members disagree about the
+  // terms - which is exactly what the till refuses to apply at the counter.
+  //
+  // Takes the RULE, not the barcode. dealRuleFor() walks every item in the shop
+  // to rebuild every rule; calling it once per row turns drawing a 470-item
+  // list into a quarter of a million passes. The lists build the map once, the
+  // same way and for the same reason they already build `setOf`.
+  function dealBadgeHtml(r){
+    if(!r) return '';
+    const ended = promoExpired(r.expires);
+    const cls = r.conflict ? ' broken' : (ended ? ' ended' : '');
+    let title = r.name + ' — any ' + r.pick + ' for ' + money(r.price)
+              + ' (' + r.members.length + ' items)';
+    if(r.conflict) title += ' — NOT APPLYING: these items disagree about the terms. '
+                          + 'Tick them all and set the deal again.';
+    else if(ended) title += ' — ended ' + r.expires;
+    return '<span class="deal-badge' + cls + '" title="' + escapeAttr(title) + '">'
+         + (r.conflict ? '⚠ DEAL' : '🏷 DEAL') + '</span>';
+  }
+
   function webTodos(){
     const out = [];
     Object.keys(items).forEach(bc => {
@@ -5543,6 +5577,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     const setOf = {};
     setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
+    const dealOf = {};
+    dealRules().forEach(r => r.members.forEach(m => { if(!dealOf[m]) dealOf[m] = r; }));
 
     const rowHtml = bc => {
       const it = items[bc];
@@ -5570,7 +5606,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
             ${selectMode ? `<span class="pick">${picked ? '✓' : ''}</span>` : ''}
             ${thumbHtml(it)}
             <div style="min-width:0;">
-              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}${webBadgeHtml(bc)}</div>
+              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}${dealBadgeHtml(dealOf[bc])}${webBadgeHtml(bc)}</div>
               <div class="item-meta">Made by ${escapeHtml(it.maker||'—')} · Expected ${it.qty}${folderTag}</div>
               <div class="item-price">${priceLine}</div>
               <div class="expected">${diffLabel}</div>
@@ -7406,6 +7442,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
 
     const setOf = {};
     setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
+    const dealOf = {};
+    dealRules().forEach(r => r.members.forEach(m => { if(!dealOf[m]) dealOf[m] = r; }));
 
     const rowHtml = bc => {
       const it = items[bc];
@@ -7419,7 +7457,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
           <div class="row-main">
             ${thumbHtml(it)}
             <div style="min-width:0;">
-              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}</div>
+              <div class="item-name">${escapeHtml(it.name)}${setOf[bc] ? `<span class="set-badge" title="${escapeAttr(setRuleName(setOf[bc]) + ' — ' + money(setOf[bc].price))}">🎁 SET</span>` : ''}${dealBadgeHtml(dealOf[bc])}</div>
               <div class="item-meta">${money(price)} · ${out ? 'None left' : avail + ' available'}${folderTag}</div>
             </div>
           </div>
