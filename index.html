@@ -1378,7 +1378,7 @@
     <div class="bulk-deal-terms" style="display:flex;gap:8px;">
       <div style="flex:1;">
         <label for="bulkDealPick">Buy how many</label>
-        <input type="number" id="bulkDealPick" inputmode="numeric" step="1" min="2" placeholder="2">
+        <input type="number" id="bulkDealPick" inputmode="numeric" step="1" min="2" value="2">
       </div>
       <div style="flex:1;">
         <label for="bulkDealPrice">For (£)</label>
@@ -1387,11 +1387,7 @@
     </div>
     <label for="bulkDealExpires">Deal ends (optional)</label>
     <input type="date" id="bulkDealExpires">
-    <div class="folder-hint">
-      Any <b>2</b> of the ticked items for <b>£20</b> — the till works it out by itself, and the
-      website shows it on each one. The saving comes off the makers, so tell them before
-      switching a deal on.
-    </div>
+    <div class="folder-hint" id="bulkDealHint"></div>
 
     <div class="btn-row">
       <button class="btn btn-secondary" id="bulkEditCancel">Cancel</button>
@@ -4216,9 +4212,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.47.0';
+  const APP_VERSION = '1.47.1';
   const BUILD_DATE  = '6 Sept 2026';
-  const BUILD_TIME  = '17:29';
+  const BUILD_TIME  = '18:02';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -7585,14 +7581,61 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('bulkMakerInput').value = '';
     document.getElementById('bulkWebInput').value = '';
     document.getElementById('bulkDealTag').value = '';
-    document.getElementById('bulkDealPick').value = '';
+    // Two, not blank. Nearly every offer is "any 2 for", and a box that opens
+    // empty under a label saying "Buy how many" is how the first real attempt
+    // at this was refused.
+    document.getElementById('bulkDealPick').value = '2';
     document.getElementById('bulkDealPrice').value = '';
     document.getElementById('bulkDealExpires').value = '';
     // Offer the deals that already exist, so a second spelling is never typed.
     document.getElementById('dealTagOptions').innerHTML =
       dealRules().map(r => '<option value="' + escapeAttr(r.name) + '"></option>').join('');
+    paintBulkDealHint();
     document.getElementById('bulkEditModal').style.display = 'flex';
   });
+  // Say back what has actually been typed, against the number of items actually
+  // ticked. A hint that states an example is worse than none: it reads as
+  // confirmation, and the one thing somebody needs to know here is whether the
+  // till agrees with them yet.
+  function paintBulkDealHint(){
+    const el = document.getElementById('bulkDealHint');
+    if(!el) return;
+    const tag = document.getElementById('bulkDealTag').value.trim();
+    const k = Math.floor(Number(document.getElementById('bulkDealPick').value) || 0);
+    const pr = Number(document.getElementById('bulkDealPrice').value);
+    const n = Object.keys(bulkPicked).length;
+
+    if(tag === '-'){
+      el.innerHTML = 'These items will be taken <b>out</b> of every deal.';
+      return;
+    }
+    if(!tag){
+      el.innerHTML = 'A name for the offer, e.g. Autumn Table. Leave it blank to change nothing, '
+                   + 'or type just <b>-</b> to take these items out of every deal.';
+      return;
+    }
+    const bits = [];
+    if(k < 2) bits.push('fill in <b>how many</b> (2 or more)');
+    if(!(pr > 0)) bits.push('fill in <b>the price</b>');
+    if(bits.length){
+      el.innerHTML = 'Nearly — ' + bits.join(' and ') + '.';
+      return;
+    }
+    if(n < k){
+      el.innerHTML = '<b>' + n + ' item' + (n===1?'':'s') + ' ticked</b>, but the deal is for '
+                   + k + '. Tick at least ' + k + '.';
+      return;
+    }
+    el.innerHTML = 'Any <b>' + k + '</b> of the <b>' + n + '</b> ticked items for <b>'
+                 + money(pr) + '</b> — the till works it out by itself, and the website shows '
+                 + 'it on each one. The saving comes off the makers, so tell them before '
+                 + 'switching a deal on.';
+  }
+  ['bulkDealTag','bulkDealPick','bulkDealPrice'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('input', paintBulkDealHint);
+  });
+
   document.getElementById('bulkEditCancel').addEventListener('click', () => {
     document.getElementById('bulkEditModal').style.display = 'none';
   });
@@ -7612,8 +7655,8 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // repeated numbers agreeing with each other. Half a deal is refused here
     // rather than written and left not to fire.
     if(dt && dt !== '-'){
-      if(dk < 2){ showToast('A deal has to be at least 2 items', 'error'); return; }
-      if(dp <= 0){ showToast('Give the deal a price', 'error'); return; }
+      if(dk < 2){ showToast('Fill in "Buy how many" — 2 or more', 'error'); return; }
+      if(dp <= 0){ showToast('Fill in the deal price', 'error'); return; }
       const picked = Object.keys(bulkPicked);
       if(picked.length < dk){
         showToast('Tick at least ' + dk + ' items for a deal of ' + dk, 'error');

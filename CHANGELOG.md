@@ -9,6 +9,31 @@ fixes.
 
 ---
 
+## v1.47.1 - 6 September 2026, 18:02
+
+**Setting a deal refused the commonest deal there is.**
+
+The **Buy how many** box showed a grey <b>2</b>, which read exactly like a
+filled-in 2 - and it was a placeholder. The box itself opened empty, so
+ticking some items, typing a name and a price and pressing Apply was answered
+with *"A deal has to be at least 2 items"* about a box that looked already
+filled. Reported from the counter on the first real attempt at using it.
+
+Three things were wrong and all three are fixed:
+
+- **The box now opens with a real 2 in it.** Nearly every offer is "any 2 for",
+  so the common case works without touching it. No placeholder that can be
+  mistaken for a value.
+- **The hint underneath said "Any 2 of the ticked items for £20" whatever you
+  typed.** It read as confirmation of numbers nobody had entered. It now says
+  the real ones back - *Any 2 of the 3 ticked items for £5.00* - and while
+  something is missing it says which box, or that too few items are ticked for
+  the number asked for.
+- **The messages name the box** rather than the rule: "Fill in Buy how many -
+  2 or more".
+
+---
+
 ## v1.47.0 - 6 September 2026, 17:29
 
 **A button in Stock that shows everything on an offer.**
