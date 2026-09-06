@@ -856,6 +856,7 @@
   <div id="tab-list">
     <div class="search-row">
       <input type="text" id="searchBox" placeholder="Search by name or code…">
+      <button type="button" id="offersBtn" title="Show only the items in a set or a deal">🏷</button>
       <button type="button" id="selectModeBtn" title="Select multiple items">☑</button>
     </div>
     <div class="bulk-bar" id="bulkBar" style="display:none;">
@@ -4215,9 +4216,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.46.1';
+  const APP_VERSION = '1.47.0';
   const BUILD_DATE  = '6 Sept 2026';
-  const BUILD_TIME  = '17:24';
+  const BUILD_TIME  = '17:58';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -5536,6 +5537,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('sessionDate').textContent = fmtDate(sessionDate);
   }
 
+  // Narrow the stock list to what is in an offer - a set price or a deal.
+  //
+  // Both are rules that live ON the items rather than anywhere listable, so
+  // until now the only way to audit them was to scroll the whole shop looking
+  // for badges. That is exactly the job somebody has when they are asked which
+  // things are in the autumn offer, or when a red badge says a deal is broken
+  // and they have to find the rest of its members to fix it.
+  let offersOnly = false;
+
   function renderList(filter){
     renderTotals();
     const listEl = document.getElementById('itemList');
@@ -5548,7 +5558,30 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     renderCountFocusBar();
     const inFocus = countFocus === null ? barcodes : itemsUnderFolder(countFocus);
 
+    // Built here rather than further down because the filter needs them too,
+    // and each one walks the whole stock list to gather its rules - doing that
+    // twice per draw is the thing worth avoiding, not the map itself.
+    const setOf = {};
+    setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
+    const dealOf = {};
+    dealRules().forEach(r => r.members.forEach(m => { if(!dealOf[m]) dealOf[m] = r; }));
+    const inAnOffer = bc => !!(setOf[bc] || dealOf[bc]);
+
+    // A button that can only ever lead to an empty list is worse than no
+    // button. It appears when the shop actually has an offer on, and turns
+    // itself off if the last one goes - otherwise the list would empty for
+    // somebody who could no longer see the control that emptied it.
+    const anyOffers = Object.keys(setOf).length > 0 || Object.keys(dealOf).length > 0;
+    if(!anyOffers) offersOnly = false;
+    const offersBtn = document.getElementById('offersBtn');
+    if(offersBtn){
+      offersBtn.style.display = anyOffers ? '' : 'none';
+      offersBtn.classList.toggle('sel', offersOnly);
+      offersBtn.setAttribute('aria-pressed', String(offersOnly));
+    }
+
     const filtered = inFocus.filter(bc => {
+      if(offersOnly && !inAnOffer(bc)) return false;
       if(!q) return true;
       const it = items[bc];
       return it.name.toLowerCase().includes(q) || bc.toLowerCase().includes(q)
@@ -5567,18 +5600,18 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     emptyEl.style.display = 'none';
 
     if(filtered.length === 0){
-      listEl.innerHTML = countFocus === null
-        ? '<div class="empty-state">No matches found.</div>'
-        : `<div class="empty-state">No matches in ${escapeHtml(focusLabel(countFocus))}. Tap <strong>Show all stock</strong> to search the whole shop.</div>`;
+      // Telling somebody to change a word they never typed is no help, so an
+      // empty list caused by the offers filter says so rather than blaming a
+      // search.
+      listEl.innerHTML = (offersOnly && !q)
+        ? '<div class="empty-state">Nothing is in a set or a deal just now.</div>'
+        : countFocus === null
+          ? '<div class="empty-state">No matches found.</div>'
+          : `<div class="empty-state">No matches in ${escapeHtml(focusLabel(countFocus))}. Tap <strong>Show all stock</strong> to search the whole shop.</div>`;
       return;
     }
 
     const nameSort = (a,b) => items[a].name.localeCompare(items[b].name);
-
-    const setOf = {};
-    setRules().forEach(r => r.members.forEach(m => { if(!setOf[m]) setOf[m] = r; }));
-    const dealOf = {};
-    dealRules().forEach(r => r.members.forEach(m => { if(!dealOf[m]) dealOf[m] = r; }));
 
     const rowHtml = bc => {
       const it = items[bc];
@@ -5595,8 +5628,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         ? `${money(price)} each · ${money(lineValue)} counted`
         : `No price set`;
 
-      // While searching the list is flat, so show where the item lives
-      const folderTag = (q && itemFolder(it))
+      // While the list is flat, show where the item lives - true of a search
+      // and of the offers filter, which gathers items from all over the shop.
+      const folderTag = ((q || offersOnly) && itemFolder(it))
         ? ` · 📁 ${escapeHtml(itemFolder(it))}` : '';
 
       const picked = selectMode && bulkPicked[bc];
@@ -5618,9 +5652,22 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         </div>`;
     };
 
-    if(q){
-      // Searching: flat list of matches, ignoring folders
-      filtered.sort(nameSort);
+    if(q || offersOnly){
+      // Flat list, ignoring folders. An offer gathers items from all over the
+      // shop on purpose, so showing them back inside their folders would hide
+      // the very thing being looked at.
+      //
+      // Sorted by offer, then by name: the members of one deal or one set land
+      // together, which is what makes the list answerable - "these six are the
+      // autumn offer" rather than six names in alphabetical order with no sign
+      // of which belongs to what.
+      if(offersOnly){
+        const groupOf = bc => (setOf[bc] ? 's:' + setRuleName(setOf[bc])
+                                         : (dealOf[bc] ? 'd:' + dealOf[bc].key : ''));
+        filtered.sort((a,b) => groupOf(a).localeCompare(groupOf(b)) || nameSort(a,b));
+      } else {
+        filtered.sort(nameSort);
+      }
       listEl.innerHTML = filtered.map(rowHtml).join('');
     } else {
       // Normal view: loose items first, then collapsible folders
@@ -7513,6 +7560,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     }
     refreshBulkBar();
   }
+  // The offers filter. Turning it on leaves select mode alone on purpose: the
+  // usual reason for narrowing to a deal is to tick its members and edit them
+  // together, so the two are meant to be used at once.
+  document.getElementById('offersBtn').addEventListener('click', () => {
+    offersOnly = !offersOnly;
+    renderList(document.getElementById('searchBox').value);
+  });
   document.getElementById('selectModeBtn').addEventListener('click', () => setSelectMode(!selectMode));
   document.getElementById('bulkDoneBtn').addEventListener('click', () => setSelectMode(false));
   document.getElementById('bulkAllBtn').addEventListener('click', () => {

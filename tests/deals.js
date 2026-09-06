@@ -511,5 +511,107 @@ console.log('\nThe DEAL badge in the stock list');
   check('it is escaped instead', html.indexOf('&quot;') > -1 && html.indexOf('&lt;b&gt;') > -1);
 }
 
+/* ---------- 12. the Stock tab's offers filter ---------- */
+// "Show me everything that is in a deal or a set." Both are rules that live ON
+// items rather than anywhere listable, so without this the only way to audit an
+// offer was to scroll the whole shop looking for badges - which is exactly the
+// job somebody has when a red badge says a deal is broken and they need to find
+// the rest of its members.
+//
+// renderList draws the DOM and cannot be sliced, so what is checked here is the
+// decision inside it: which barcodes survive, in what order, and the guard. The
+// check below holds the shipped source against these copies, so if renderList
+// changes its mind and this file does not, something fails.
+console.log('\nThe offers filter in the Stock tab');
+
+function offerMaps() {
+  const setOf = {}, dealOf = {};
+  ctx.setRules().forEach(r => r.members.forEach(m => { if (!setOf[m]) setOf[m] = r; }));
+  ctx.dealRules().forEach(r => r.members.forEach(m => { if (!dealOf[m]) dealOf[m] = r; }));
+  return { setOf, dealOf };
+}
+// The same two expressions renderList uses.
+function inAnOffer(bc, m) { return !!(m.setOf[bc] || m.dealOf[bc]); }
+function anyOffers(m) { return Object.keys(m.setOf).length > 0 || Object.keys(m.dealOf).length > 0; }
+function groupSorted(bcs, m) {
+  const groupOf = bc => (m.setOf[bc] ? 's:' + ctx.setRuleName(m.setOf[bc])
+                                     : (m.dealOf[bc] ? 'd:' + m.dealOf[bc].key : ''));
+  return bcs.slice().sort((a, b) =>
+    groupOf(a).localeCompare(groupOf(b)) ||
+    ctx.items[a].name.localeCompare(ctx.items[b].name));
+}
+
+{
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  ctx.items.E.set = { with: ['F'], price: 55 };
+  const m = offerMaps();
+  const kept = Object.keys(ctx.items).filter(bc => inAnOffer(bc, m));
+  check('it keeps the deal members', ['A', 'B', 'C'].every(bc => kept.indexOf(bc) > -1));
+  check('and both halves of a set', kept.indexOf('E') > -1 && kept.indexOf('F') > -1);
+  check('and nothing else', kept.length === 5, JSON.stringify(kept));
+  check('an item in neither is left out', kept.indexOf('D') === -1);
+}
+{
+  // A set and a deal in one shop must not interleave: the point of the list is
+  // to be able to say "these three are the autumn offer".
+  stock();
+  deal(['A', 'C'], 'Autumn Table', 2, 20);
+  ctx.items.B.set = { with: ['D'], price: 30 };
+  const m = offerMaps();
+  const kept = groupSorted(Object.keys(ctx.items).filter(bc => inAnOffer(bc, m)), m);
+  const groups = kept.map(bc => (m.setOf[bc] ? 'set' : 'deal'));
+  const firstDeal = groups.indexOf('deal'), lastDeal = groups.lastIndexOf('deal');
+  const firstSet = groups.indexOf('set'), lastSet = groups.lastIndexOf('set');
+  check('the members of one offer land together',
+        lastDeal - firstDeal === 1 && lastSet - firstSet === 1, JSON.stringify(groups));
+  check('sorted by name inside an offer',
+        ctx.items[kept[firstDeal]].name < ctx.items[kept[lastDeal]].name);
+}
+{
+  // The guard. A filter that outlives the last offer empties the shop for
+  // somebody who can no longer see the control that emptied it.
+  stock();
+  check('with no offers at all the button does not belong on screen',
+        anyOffers(offerMaps()) === false);
+  deal(['A', 'B'], 'Autumn Table', 2, 20);
+  check('one deal is enough to earn it', anyOffers(offerMaps()) === true);
+  stock();
+  ctx.items.A.set = { with: ['B'], price: 25 };
+  check('so is one set', anyOffers(offerMaps()) === true);
+}
+{
+  // A broken deal still counts as an offer - finding its members is the whole
+  // reason somebody reaches for this filter.
+  stock();
+  deal(['A', 'B', 'C'], 'Autumn Table', 2, 20);
+  ctx.items.C.dealPrice = 22;
+  const m = offerMaps();
+  check('a deal that refuses to apply is still findable',
+        ['A', 'B', 'C'].every(bc => inAnOffer(bc, m)));
+}
+{
+  // An expired deal too, or its items keep a dead tag nobody can locate.
+  stock();
+  deal(['A', 'B'], 'Autumn Table', 2, 20, '2020-01-01');
+  EXPIRED = true;
+  const m = offerMaps();
+  check('an expired deal is still findable', inAnOffer('A', m) && inAnOffer('B', m));
+  EXPIRED = false;
+}
+
+// The copies above are only worth anything if they are still what ships.
+{
+  const src = HTML;
+  check('renderList still filters on setOf/dealOf the way this test does',
+        src.indexOf('const inAnOffer = bc => !!(setOf[bc] || dealOf[bc]);') > -1);
+  check('and still decides the button on the same test',
+        src.indexOf('const anyOffers = Object.keys(setOf).length > 0 || Object.keys(dealOf).length > 0;') > -1);
+  check('and still turns the filter off when the last offer goes',
+        src.indexOf('if(!anyOffers) offersOnly = false;') > -1);
+  check('and still lists a filtered shop flat',
+        src.indexOf('if(q || offersOnly){') > -1);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

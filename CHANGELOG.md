@@ -9,6 +9,34 @@ fixes.
 
 ---
 
+## v1.47.0 - 6 September 2026, 17:58
+
+**A button in Stock that shows everything on an offer.**
+
+Sets and deals are rules that live on the items rather than anywhere you can
+list, so the only way to audit one was to scroll the whole shop looking for
+badges. The tag button beside the search box now gathers them: every item in a
+set or a deal, in one flat list, each showing the folder it actually lives in.
+
+The members of one offer land **together** rather than in alphabetical order
+across the whole list, which is what makes it answerable - *these three are the
+autumn offer* - instead of five names with no sign of which belongs to what.
+
+It works with everything around it: search narrows inside it, select mode still
+ticks rows, so the normal job of "find the deal, tick its members, Edit them
+together" is one screen. A deal that is **broken or expired still appears** -
+finding its members is the main reason to reach for this.
+
+**The button only exists when there is an offer on**, and if the last one goes
+while the filter is on it turns itself off rather than leaving somebody staring
+at an empty shop with no control on screen to explain it.
+
+15 more checks in `tests/deals.js`, including four that hold the shipped
+`renderList` against the copies the test reasons about, so the two cannot drift
+apart quietly.
+
+---
+
 ## v1.46.1 - 6 September 2026, 17:24
 
 **A DEAL badge in the stock list, beside the SET one.**
