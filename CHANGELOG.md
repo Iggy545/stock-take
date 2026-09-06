@@ -9,7 +9,7 @@ fixes.
 
 ---
 
-## v1.47.0 - 6 September 2026, 17:58
+## v1.47.0 - 6 September 2026, 17:29
 
 **A button in Stock that shows everything on an offer.**
 
@@ -37,7 +37,7 @@ apart quietly.
 
 ---
 
-## v1.46.1 - 6 September 2026, 17:24
+## v1.46.1 - 6 September 2026, 17:21
 
 **A DEAL badge in the stock list, beside the SET one.**
 
@@ -67,7 +67,7 @@ of the tooltip attribute.
 
 ---
 
-## v1.46.0 - 6 September 2026, 16:29
+## v1.46.0 - 6 September 2026, 17:05
 
 **Any 2 of these 12 for £20 — mix-and-match deals.**
 
