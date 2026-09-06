@@ -9,6 +9,85 @@ fixes.
 
 ---
 
+## v1.46.0 - 6 September 2026, 16:29
+
+**Any 2 of these 12 for £20 — mix-and-match deals.**
+
+A set price names its members and applies when all of them are in the basket.
+A deal names a GROUP and applies to any two of them, so the till has to choose
+which two of the basket the saving lands on — and that choice decides which
+maker's item is discounted.
+
+The rule is **dearest first**. It gives the customer the larger saving, it is
+the reading easiest to defend across the counter, and it is fixed and tested
+rather than left to whatever order the stock list happened to be in.
+
+### Nothing is keyed in
+
+Staff scan as normal. The basket re-matches itself on every change, the way set
+prices already do, so the deal applies however the items got there and comes
+straight back off the moment one is removed. Each line says what came off it,
+and the totals name the offer.
+
+### It says when a customer is one item short
+
+Twelve things scattered round the shop is more than anyone can hold in their
+head, so a line in a deal is marked as being in one even before it fires, and a
+note above **Charge** says how many more are needed. Without that the offer only
+ever applies by accident. It names the terms rather than promising a figure,
+because what one more is worth depends on which one they bring.
+
+### Setting one up
+
+Stock → tick the items → **Edit**, and fill in the deal box: a name, how many,
+and for how much. All the members are written in one action, which is what keeps
+them agreeing with each other. The name is picked from a list rather than
+re-typed — a tag typed a second way would split one offer into two, silently,
+the way "Crafted Gifts" once split the website's category menu.
+
+Setting a deal asks for confirmation and names the makers it will come off.
+
+### Where the money goes
+
+Nowhere new. The saving is folded into each line the same way a set price is,
+split across the members in proportion to price, so a maker's payout carries
+their own share of it. The shop takes its usual percentage of what was actually
+rung up. **No payout arithmetic changed at all**, and old payout reports read
+exactly as they did.
+
+The saving does come off the makers, so tell them before a deal goes on the
+shelf.
+
+### A deal whose items disagree refuses to apply
+
+The terms are repeated on every member, so an import or a half-finished sync can
+leave them out of step. Rather than charge a price half the items have never
+heard of, the deal stands aside — and says so on the basket, because a discount
+that quietly stops working is the one nobody ever finds out about.
+
+### On the website
+
+Every item in a deal wears the offer on its card, there is a chip and a
+`?deal=` link that shows just the things in it, and the product page says what
+to do next. An offer is only ever drawn from a live index: one that has expired,
+or has fewer members left on the shelf than it asks for, disappears rather than
+advertising a price the counter would not honour.
+
+### Under the hood
+
+- 80 new checks in `tests/deals.js`, run against eight deliberately broken
+  copies — cheapest-first, the saving not split, the availability pool not
+  shared with set prices, a conflict ignored, the tag not folded, no nudge,
+  stacking on a hand discount, and a deal that would charge more. All eight
+  produce failures.
+- `setMatches()` is now a view onto one matcher that does sets and deals against
+  a single availability pool, so an item can never be claimed by both.
+- Four flat fields on the item — `dealTag`, `dealPick`, `dealPrice`,
+  `dealExpires` — deliberately not a map, so the Worker needs no hand-written
+  decoder and has no second chance to drop one of them.
+
+---
+
 ## v1.45.0 - 3 September 2026, 12:40
 
 **Pressing "Try the card again" can no longer take the money twice.**

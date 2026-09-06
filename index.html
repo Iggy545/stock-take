@@ -181,7 +181,19 @@
   }
   .promo-actions button.pr-del{color:var(--danger);}
   #cartPromoRow{cursor:pointer;color:var(--moss-dark);}
-  #cartSetRow{color:var(--moss-dark);}
+  #cartSetRow,#cartDealRow{color:var(--moss-dark);}
+  /* One item short. Sits directly above Charge because that is the last
+     moment it can still change what the customer walks out with. */
+  .deal-nudge{
+    margin-top:8px;padding:10px 12px;border-radius:10px;
+    background:#fff;border:1px dashed var(--clay);
+    color:var(--clay-dark);font-size:13px;font-weight:600;line-height:1.4;
+  }
+  .deal-warn{
+    margin-top:8px;padding:10px 12px;border-radius:10px;
+    background:#fff;border:1px solid var(--danger);
+    color:var(--danger);font-size:13px;font-weight:600;line-height:1.4;
+  }
 
   /* Set pricing (two items sold together for less) */
   .set-box{
@@ -589,6 +601,11 @@
   .cart-line .cl-meta{font-size:12px;color:var(--muted);margin-top:1px;}
   .cart-line .cl-disc{font-size:11px;color:var(--clay-dark);font-weight:600;}
   .cart-line .cl-set{font-size:11px;color:var(--moss-dark);font-weight:600;}
+  /* A deal saving reads as a saving, like a set price. The tag is the other
+     half: it marks a line that COULD be in a deal but is not yet, which is
+     the only way staff can know to offer it. */
+  .cart-line .cl-deal{font-size:11px;color:var(--moss-dark);font-weight:600;}
+  .cart-line .cl-tag{font-size:11px;color:var(--muted);font-weight:600;}
   .qty-ctrl{display:flex;align-items:center;gap:2px;}
   .qty-ctrl button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--panel);font-size:17px;font-weight:700;color:var(--ink);cursor:pointer;padding:0;line-height:1;}
   .qty-ctrl span{min-width:26px;text-align:center;font-weight:700;font-size:14px;}
@@ -884,6 +901,7 @@
         <div class="t-row"><span>Subtotal</span><span id="cartSubtotal">£0.00</span></div>
         <div class="t-row" id="cartDiscRow" style="display:none;"><span>Discounts</span><span id="cartDiscount">−£0.00</span></div>
         <div class="t-row" id="cartSetRow" style="display:none;"><span id="cartSetLabel">🎁 Set price</span><span id="cartSetAmt">−£0.00</span></div>
+        <div class="t-row" id="cartDealRow" style="display:none;"><span id="cartDealLabel">🏷 Deal</span><span id="cartDealAmt">−£0.00</span></div>
         <div class="t-row" id="cartPromoRow" style="display:none;" title="Tap to remove"><span id="cartPromoLabel">🎟 Promo</span><span id="cartPromoAmt">−£0.00</span></div>
         <div class="t-row grand"><span>Total</span><span id="cartTotal">£0.00</span></div>
       </div>
@@ -896,6 +914,7 @@
       <button class="btn btn-secondary" id="promoBtn">🎟 Promo code</button>
       <button class="btn btn-secondary" id="clearCartBtn">Empty basket</button>
     </div>
+    <div id="dealNudges"></div>
     <button class="btn charge-btn" id="chargeBtn" style="margin-top:8px;">Charge £0.00</button>
     <div class="card" style="margin-top:12px;">
       <div class="quick-sell-head">Tap to add to basket</div>
@@ -1134,6 +1153,9 @@
 
 <!-- Shared list of existing folders for the folder pickers -->
 <datalist id="folderOptions"></datalist>
+<!-- Deal names already in use. Picked, never re-typed: a tag typed a second
+     way splits one offer in two, silently, the way "Crafted Gifts" did. -->
+<datalist id="dealTagOptions"></datalist>
 <!-- Every label wording already used, so the same one is typed the same way twice. -->
 <datalist id="labelOptions"></datalist>
 
@@ -1333,6 +1355,31 @@
       <option value="off">No — shop only</option>
     </select>
     <div class="folder-hint">This is how to mark a whole folder at once. Nothing is sent anywhere — it only decides what turns up on the website list.</div>
+
+    <!-- Mix-and-match deal. Ticking the members and setting the terms is ONE
+         action on purpose: the numbers are repeated on every item, and a deal
+         whose members disagree refuses to apply. -->
+    <label style="margin-top:14px;">Put these in a deal</label>
+    <input type="text" id="bulkDealTag" list="dealTagOptions" placeholder="Leave blank to keep current" autocomplete="off">
+    <div class="folder-hint">A name for the offer, e.g. Autumn Table. Type just - to take these items out of every deal.</div>
+    <div class="bulk-deal-terms" style="display:flex;gap:8px;">
+      <div style="flex:1;">
+        <label for="bulkDealPick">Buy how many</label>
+        <input type="number" id="bulkDealPick" inputmode="numeric" step="1" min="2" placeholder="2">
+      </div>
+      <div style="flex:1;">
+        <label for="bulkDealPrice">For (£)</label>
+        <input type="number" id="bulkDealPrice" inputmode="decimal" step="0.01" min="0" placeholder="20.00">
+      </div>
+    </div>
+    <label for="bulkDealExpires">Deal ends (optional)</label>
+    <input type="date" id="bulkDealExpires">
+    <div class="folder-hint">
+      Any <b>2</b> of the ticked items for <b>£20</b> — the till works it out by itself, and the
+      website shows it on each one. The saving comes off the makers, so tell them before
+      switching a deal on.
+    </div>
+
     <div class="btn-row">
       <button class="btn btn-secondary" id="bulkEditCancel">Cancel</button>
       <button class="btn btn-primary" id="bulkEditApply">Apply</button>
@@ -4156,9 +4203,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
   // one. 24-hour clock, local time, so there is no am/pm to misread across a
   // counter. All three are set by hand — there is no build step to fill them
   // in, so publishing means editing them.
-  const APP_VERSION = '1.45.0';
-  const BUILD_DATE  = '3 Sept 2026';
-  const BUILD_TIME  = '12:40';
+  const APP_VERSION = '1.46.0';
+  const BUILD_DATE  = '6 Sept 2026';
+  const BUILD_TIME  = '16:29';
   const versionEl = document.getElementById('appVersion');
   if(versionEl) versionEl.textContent = `v${APP_VERSION} · ${BUILD_DATE}, ${BUILD_TIME}`;
 
@@ -6937,25 +6984,120 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return r.members.map(m => (items[m] ? items[m].name : m)).join(' + ');
   }
 
-  // Match the rules against a basket. Returns a per-line saving (parallel to
-  // lines) plus a description of what was applied, for the till display.
+  // ---- Mix-and-match deals ----
+  // "Any 2 of these 12, £20." A deal is NOT a set. A set is THESE EXACT ITEMS
+  // together; a deal is ANY k of a named group, so the basket has to choose
+  // which of the eligible lines the saving lands on.
+  //
+  // That choice decides whose money it is - the maker of whichever item is
+  // picked carries their share of the saving - so it is fixed, documented and
+  // tested rather than left to stock-list order: DEAREST FIRST. It gives the
+  // customer the larger saving, which is the reading easiest to defend across
+  // the counter, and it is the rule the makers are told about before a deal is
+  // switched on.
+  //
+  // The rule lives on the ITEMS, repeated across every member, for the reason a
+  // set rule does - items are the only thing that syncs - and also because the
+  // website prints the offer from item data. A till-side table of deals could
+  // disagree with what the customer is reading on the shop window, and the
+  // customer would be the one holding the disagreement.
+  //
+  // FOUR FLAT SCALARS, NEVER A MAP: dealTag, dealPick, dealPrice, dealExpires.
+  // shop-worker/src/catalogue.js decodes maps by hand, one named key at a time,
+  // and that is exactly where a set's own photograph was silently dropped for
+  // months. A scalar needs one line in PROJECTION and one in toPublicRecord.
+
+  // Tags are compared FOLDED, never exactly. The website's category menu
+  // stopped publishing once already because the till re-typed "Crafted gifts"
+  // as "Crafted Gifts"; a deal tag typed a second way would split one offer in
+  // two in exactly the same silent manner. The editor picks from a list for the
+  // same reason - so the second spelling is never created at all.
+  function dealKey(tag){
+    return String(tag == null ? '' : tag).trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  // Every deal in the stock list, one per folded tag.
+  //
+  // The numbers are repeated on every member, so they can in principle
+  // disagree - an import, or a half-finished sync. A deal whose members
+  // disagree DOES NOT FIRE: charging a price half the items have never heard of
+  // is worse than not discounting, and staff notice a missing discount at once.
+  // It is REPORTED rather than dropped, because going quiet is the failure this
+  // whole feature has to avoid.
+  function dealRules(){
+    const by = {};
+    Object.keys(items).forEach(bc => {
+      const it = items[bc];
+      const k = dealKey(it && it.dealTag);
+      if(!k) return;
+      const pick  = Math.floor(Number(it.dealPick) || 0);
+      const price = round2(Number(it.dealPrice) || 0);
+      if(pick < 2 || price <= 0) return;          // not a usable deal on this item
+      const exp = (typeof it.dealExpires === 'string' && it.dealExpires) ? it.dealExpires : null;
+      if(!by[k]){
+        by[k] = { key:k, name:String(it.dealTag).trim(), lowest:bc, members:[],
+                  pick:pick, price:price, expires:exp, conflict:false };
+      }
+      const r = by[k];
+      if(r.pick !== pick || r.price !== price || (r.expires||'') !== (exp||'')) r.conflict = true;
+      r.members.push(bc);
+      // Deterministic display spelling: the lowest barcode's, so one deal is
+      // never named two ways depending on which item happened to be read first.
+      if(bc < r.lowest){ r.lowest = bc; r.name = String(it.dealTag).trim(); }
+    });
+    return Object.keys(by).sort().map(k => by[k])
+      .filter(r => r.members.length >= r.pick);   // can never fire otherwise
+  }
+
+  // The deal a given item takes part in. An item carries ONE tag, so unlike a
+  // set there is never a choice to make here.
+  function dealRuleFor(bc){
+    const k = dealKey(items[bc] && items[bc].dealTag);
+    if(!k) return null;
+    return dealRules().find(r => r.key === k) || null;
+  }
+
+  function dealRuleName(r){
+    return r.name + ' - any ' + r.pick + ' for ' + money(r.price);
+  }
+
+  // Match every offer against a basket: set prices first, then deals on what is
+  // left. Returns per-line savings kept apart by kind (the receipt and the
+  // payout sheet name them differently), plus what fired, what nearly fired,
+  // and anything that refused to.
+  //
+  // ONE availability pool for both. Without it an item can be claimed by a set
+  // AND a deal and be discounted twice - the single biggest correctness point
+  // in this file.
+  //
+  // Sets go first on purpose: a set price is a specific agreement about
+  // specific items, a deal is a general offer, so the specific one gets first
+  // claim on an item both could take.
   //
   // The saving is worked out from the prices ON THE LINES, not from the item
   // records: a line captures its price when it goes in the basket, so that is
   // what the customer is actually being charged.
-  function setMatches(lines){
-    const disc = lines.map(() => 0);
-    const applied = [];
-    if(!lines.length) return { disc: disc, applied: applied };
+  function basketOffers(lines){
+    const setLine  = lines.map(() => 0);
+    const dealLine = lines.map(() => 0);
+    const tagLine  = lines.map(() => '');
+    const sets = [], deals = [], nudges = [], warnings = [];
+    function out(){
+      return { setLine: setLine, dealLine: dealLine, tagLine: tagLine,
+               disc: lines.map((l,i) => round2(setLine[i] + dealLine[i])),
+               sets: sets, deals: deals, nudges: nudges, warnings: warnings };
+    }
+    if(!lines.length) return out();
 
     const idxOf = {};
     lines.forEach((l,i) => { if(!l.misc && idxOf[l.barcode]===undefined) idxOf[l.barcode] = i; });
-    // A line somebody has already discounted by hand sits out. Stacking a set
-    // price on top of a keyed-in discount gives a total nobody at the counter
-    // can explain. A misc amount sits out too - it is not one of the items a
-    // set rule can be about.
+    // A line somebody has already discounted by hand sits out. Stacking an
+    // offer on top of a keyed-in discount gives a total nobody at the counter
+    // can explain. A misc amount sits out too - it is not one of the items an
+    // offer can be about.
     const avail = lines.map(l => (l.misc || (l.disc && l.disc.value)) ? 0 : l.qty);
 
+    /* ---- set prices ---- */
     const rules = setRules().map(r => {
       const idxs = r.members.map(m => idxOf[m]);
       if(idxs.some(i => i===undefined)) return null;
@@ -6983,12 +7125,74 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         let share;
         if(k === m.idxs.length-1){ share = round2(total - alloc); }
         else { share = round2(total * ((Number(lines[i].price)||0) / (m.full||1))); alloc = round2(alloc + share); }
-        disc[i] = round2(disc[i] + share);
+        setLine[i] = round2(setLine[i] + share);
       });
-      applied.push({ name: setRuleName(m.rule), count: n, saving: total, idxs: m.idxs });
+      sets.push({ name: setRuleName(m.rule), count: n, saving: total, idxs: m.idxs });
     });
 
-    return { disc: disc, applied: applied };
+    /* ---- deals, on whatever the sets have left ---- */
+    dealRules().forEach(r => {
+      const mine = r.members.map(m => idxOf[m]).filter(i => i !== undefined);
+      if(!mine.length) return;
+      // An expired deal is gone: no tag on the line, no nudge, nothing. A
+      // CONFLICTED one is different - it still marks its lines and says out
+      // loud that it refused, because a deal that goes quiet is the failure
+      // this whole feature exists to avoid.
+      if(promoExpired(r.expires)) return;
+      mine.forEach(i => { if(!tagLine[i]) tagLine[i] = r.name; });
+      if(r.conflict){ warnings.push({ name: r.name, why: 'its items disagree about the price' }); return; }
+
+      // Every unit the basket can offer this deal, DEAREST FIRST. A line
+      // carries a qty, so a line of three is three chances at the deal rather
+      // than one. Ties fall to the earlier line, so the answer never rests on
+      // whether the sort happened to be stable.
+      const units = [];
+      mine.forEach(i => { for(let n=0; n<avail[i]; n++) units.push(i); });
+      units.sort((x,y) => ((Number(lines[y].price)||0) - (Number(lines[x].price)||0)) || (x - y));
+
+      let taken = 0, count = 0, total = 0;
+      const touched = [];
+      while(units.length - taken >= r.pick){
+        const group = units.slice(taken, taken + r.pick);
+        const full = round2(group.reduce((t,i) => t + (Number(lines[i].price)||0), 0));
+        const saving = round2(full - r.price);
+        // Sorted dearest first, so if the dearest group does not beat the deal
+        // price no later group can either.
+        if(saving <= 0) break;
+        taken += r.pick;
+        count++; total = round2(total + saving);
+        let alloc = 0;
+        group.forEach((i,k) => {
+          if(touched.indexOf(i) === -1) touched.push(i);
+          avail[i] -= 1;
+          let share;
+          if(k === group.length-1){ share = round2(saving - alloc); }
+          else { share = round2(saving * ((Number(lines[i].price)||0) / (full||1))); alloc = round2(alloc + share); }
+          dealLine[i] = round2(dealLine[i] + share);
+        });
+      }
+      if(count) deals.push({ key:r.key, name:r.name, pick:r.pick, price:r.price,
+                             count:count, saving:total, idxs:touched });
+
+      // Nearly. The nudge is the whole commercial value of a deal whose members
+      // are scattered round the shop: neither staff nor customer can be
+      // expected to remember which twelve things are in it.
+      //
+      // It names the TERMS rather than promising a figure, because what one
+      // more is worth depends on which one they bring.
+      const left = units.length - taken;
+      if(left > 0 && left < r.pick){
+        nudges.push({ key:r.key, name:r.name, need:r.pick - left, pick:r.pick, price:r.price });
+      }
+    });
+
+    return out();
+  }
+
+  // The set half of the above, in the shape everything already expects.
+  function setMatches(lines){
+    const o = basketOffers(lines);
+    return { disc: o.setLine, applied: o.sets };
   }
 
   function lineDiscAmount(l){
@@ -7000,16 +7204,18 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     return round2(d);
   }
   function cartFigures(){
-    const sm = setMatches(cart.lines);
-    let subtotal=0, lineDiscs=0, setDisc=0;
+    const bo = basketOffers(cart.lines);
+    let subtotal=0, lineDiscs=0, setDisc=0, dealDisc=0;
     cart.lines.forEach((l,i) => {
       subtotal += l.qty*l.price;
       lineDiscs += lineDiscAmount(l);
-      setDisc  += sm.disc[i];
+      setDisc  += bo.setLine[i];
+      dealDisc += bo.dealLine[i];
     });
     subtotal = round2(subtotal);
-    setDisc = round2(setDisc);
-    const afterLines = subtotal - lineDiscs - setDisc;
+    setDisc  = round2(setDisc);
+    dealDisc = round2(dealDisc);
+    const afterLines = subtotal - lineDiscs - setDisc - dealDisc;
     let basketDisc = 0;
     if(cart.disc && cart.disc.value){
       basketDisc = (cart.disc.type==='pct')
@@ -7039,10 +7245,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       basketDisc: basketDisc,
       promoDisc: promoDisc,
       setDisc: setDisc,          // total taken off by set prices
-      setLine: sm.disc,          // that total, per basket line
-      sets: sm.applied,          // which sets matched, for the till display
+      setLine: bo.setLine,       // that total, per basket line
+      sets: bo.sets,             // which sets matched, for the till display
+      dealDisc: dealDisc,        // total taken off by mix-and-match deals
+      dealLine: bo.dealLine,     // that total, per basket line
+      deals: bo.deals,           // which deals matched
+      dealTag: bo.tagLine,       // the deal a line belongs to, fired or not
+      nudges: bo.nudges,         // deals one item short of applying
+      warnings: bo.warnings,     // deals that refused to apply, and why
       otherDisc: round2(lineDiscs + basketDisc),   // keyed-in discounts only
-      discounts: round2(lineDiscs + setDisc + basketDisc + promoDisc),
+      discounts: round2(lineDiscs + setDisc + dealDisc + basketDisc + promoDisc),
       total: round2(afterBasket - promoDisc)
     };
   }
@@ -7060,9 +7272,16 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       linesEl.innerHTML = cart.lines.map((l,i) => {
         const d = lineDiscAmount(l);
         const sd = f.setLine[i] || 0;
-        const net = round2(l.qty*l.price - d - sd);
+        const dd = f.dealLine[i] || 0;
+        const net = round2(l.qty*l.price - d - sd - dd);
         const discNote = d>0 ? `<div class="cl-disc">−${money(d)} discount</div>` : '';
         const setNote = sd>0 ? `<div class="cl-set">🎁 −${money(sd)} set price</div>` : '';
+        // A line in a deal that has not fired yet still says so. Twelve members
+        // scattered round the shop is more than anyone can hold in their head,
+        // and this is the only place the till admits the item is in an offer.
+        const dealNote = dd>0
+          ? `<div class="cl-deal">🏷 −${money(dd)} ${escapeHtml(f.dealTag[i]||'deal')}</div>`
+          : (f.dealTag[i] ? `<div class="cl-tag">🏷 ${escapeHtml(f.dealTag[i])}</div>` : '');
         return `
           <div class="cart-line">
             <div class="cl-info" data-edit="${i}">
@@ -7071,6 +7290,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
                                             : money(l.price) + ' each · tap for discount'}</div>
               ${discNote}
               ${setNote}
+              ${dealNote}
             </div>
             <div class="qty-ctrl">
               <button type="button" data-minus="${i}">−</button>
@@ -7113,6 +7333,31 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         : '🎁 Set prices (' + f.sets.length + ')';
       document.getElementById('cartSetAmt').textContent = '−'+money(f.setDisc);
     }
+    const der = document.getElementById('cartDealRow');
+    der.style.display = f.dealDisc>0 ? 'flex' : 'none';
+    if(f.dealDisc>0){
+      // Name the deal when only one fired, the same way a set price is named.
+      document.getElementById('cartDealLabel').textContent = (f.deals.length===1)
+        ? '🏷 ' + f.deals[0].name + (f.deals[0].count>1 ? ' ×'+f.deals[0].count : '')
+        : '🏷 Deals (' + f.deals.length + ')';
+      document.getElementById('cartDealAmt').textContent = '−'+money(f.dealDisc);
+    }
+
+    // One item short, or refusing to apply. Both sit above Charge, because that
+    // is the last moment either can still change what the customer walks out
+    // with. The nudge names the TERMS rather than a figure - what one more is
+    // worth depends on which one they bring.
+    const nd = document.getElementById('dealNudges');
+    if(cart.lines.length && (f.nudges.length || f.warnings.length)){
+      nd.innerHTML = f.nudges.map(n =>
+        `<div class="deal-nudge">🏷 ${n.need} more from ${escapeHtml(n.name)} — any ${n.pick} for ${money(n.price)}</div>`
+      ).join('') + f.warnings.map(w =>
+        `<div class="deal-warn">⚠ ${escapeHtml(w.name)} did not apply: ${escapeHtml(w.why)}. Charge the ordinary prices and fix the deal in Stock.</div>`
+      ).join('');
+    } else {
+      nd.innerHTML = '';
+    }
+
     const pr = document.getElementById('cartPromoRow');
     if(cart.promo && cart.lines.length){
       pr.style.display = 'flex';
@@ -7247,6 +7492,13 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     document.getElementById('bulkFolderInput').value = '';
     document.getElementById('bulkMakerInput').value = '';
     document.getElementById('bulkWebInput').value = '';
+    document.getElementById('bulkDealTag').value = '';
+    document.getElementById('bulkDealPick').value = '';
+    document.getElementById('bulkDealPrice').value = '';
+    document.getElementById('bulkDealExpires').value = '';
+    // Offer the deals that already exist, so a second spelling is never typed.
+    document.getElementById('dealTagOptions').innerHTML =
+      dealRules().map(r => '<option value="' + escapeAttr(r.name) + '"></option>').join('');
     document.getElementById('bulkEditModal').style.display = 'flex';
   });
   document.getElementById('bulkEditCancel').addEventListener('click', () => {
@@ -7259,7 +7511,33 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     const f = document.getElementById('bulkFolderInput').value.trim();
     const m = document.getElementById('bulkMakerInput').value.trim();
     const w = document.getElementById('bulkWebInput').value;
-    if(!f && !m && !w){ showToast('Fill in a folder, a made-by or the website setting first', 'error'); return; }
+    const dt = document.getElementById('bulkDealTag').value.trim();
+    const dk = Math.floor(Number(document.getElementById('bulkDealPick').value) || 0);
+    const dp = round2(Number(document.getElementById('bulkDealPrice').value) || 0);
+    const dx = document.getElementById('bulkDealExpires').value;
+
+    // A deal is set in ONE action across every member, which is what keeps the
+    // repeated numbers agreeing with each other. Half a deal is refused here
+    // rather than written and left not to fire.
+    if(dt && dt !== '-'){
+      if(dk < 2){ showToast('A deal has to be at least 2 items', 'error'); return; }
+      if(dp <= 0){ showToast('Give the deal a price', 'error'); return; }
+      const picked = Object.keys(bulkPicked);
+      if(picked.length < dk){
+        showToast('Tick at least ' + dk + ' items for a deal of ' + dk, 'error');
+        return;
+      }
+      // The saving comes off the makers. Worth saying once, at the moment the
+      // deal is created, rather than only in the runbook.
+      const makersIn = {};
+      picked.forEach(bc => { if(items[bc]) makersIn[String(items[bc].maker||'').trim()||'—'] = 1; });
+      const who = Object.keys(makersIn);
+      if(!confirm('Any ' + dk + ' of these ' + picked.length + ' items for ' + money(dp) + '.\n\n'
+                  + 'The saving comes off ' + (who.length===1 ? who[0] : who.length + ' makers')
+                  + ' — they should know before this goes on the shelf.\n\nSet the deal?')) return;
+    }
+
+    if(!f && !m && !w && !dt){ showToast('Fill in a folder, a made-by, the website setting or a deal first', 'error'); return; }
     const bcs = Object.keys(bulkPicked);
     bcs.forEach(bc => {
       if(!items[bc]) return;
@@ -7267,6 +7545,15 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(m) items[bc].maker = (m === '-') ? '' : m;
       if(w === 'on') items[bc].web = 1;
       else if(w === 'off') delete items[bc].web;
+      if(dt === '-'){
+        delete items[bc].dealTag; delete items[bc].dealPick;
+        delete items[bc].dealPrice; delete items[bc].dealExpires;
+      } else if(dt){
+        items[bc].dealTag = dt;
+        items[bc].dealPick = dk;
+        items[bc].dealPrice = dp;
+        if(dx) items[bc].dealExpires = dx; else delete items[bc].dealExpires;
+      }
     });
     if(!saveItems()) return;
     document.getElementById('bulkEditModal').style.display = 'none';
@@ -8415,7 +8702,7 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
     // lines in proportion to their value, so each line's net is honest and
     // reports add up to the penny.
     const basketWide = round2(f.basketDisc + f.promoDisc);
-    const netsBefore = cart.lines.map((l,i) => l.qty*l.price - lineDiscAmount(l) - (f.setLine[i]||0));
+    const netsBefore = cart.lines.map((l,i) => l.qty*l.price - lineDiscAmount(l) - (f.setLine[i]||0) - (f.dealLine[i]||0));
     const sumBefore = netsBefore.reduce((a,b) => a+b, 0) || 1;
     let allocated = 0;
     const shares = cart.lines.map((l,i) => {
@@ -8430,8 +8717,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       // The set saving is folded into the line's own discount, so every report
       // downstream -- maker payouts, Z, receipts, refunds -- reads it off the
       // line net without needing to know sets exist.
-      const setShare = round2(f.setLine[i]||0);
-      const disc = round2(lineDiscAmount(l) + setShare + shares[i]);
+      const setShare  = round2(f.setLine[i]||0);
+      const dealShare = round2(f.dealLine[i]||0);
+      const disc = round2(lineDiscAmount(l) + setShare + dealShare + shares[i]);
       const net  = round2(l.qty*l.price - disc);
       // take the stock off the shelf. A misc amount has none, and is skipped on
       // its own flag rather than on its barcode, in case an item is ever coded
@@ -8466,6 +8754,12 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
         // How much of this line's discount came from a set price, so the
         // receipt can call it that instead of a plain discount.
         setDisc: setShare > 0 ? setShare : null,
+        // The same for a mix-and-match deal, and the deal's name. DISPLAY ONLY:
+        // no arithmetic depends on either. The payout maths reads the line's
+        // net, which already has the saving in it, so a maker bears the deal
+        // without anything downstream having to know deals exist.
+        dealDisc: dealShare > 0 ? dealShare : null,
+        deal: (dealShare > 0 && f.dealTag[i]) ? f.dealTag[i] : null,
         // A manual amount rather than something off the shelf. Written as true
         // or null, never undefined, because Firestore refuses undefined.
         misc: l.misc ? true : null,
@@ -8578,7 +8872,11 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       if(Math.abs(q)!==1) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;${money(Number(l.price)||0)} each</span><span></span></div>`;
       const sd = Number(l.setDisc) || 0;
       if(sd > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;set price</span><span>−${money(sd)}</span></div>`;
-      const od = round2((Number(l.disc)||0) - sd);
+      // A deal is named on the receipt rather than shown as a bare discount, so
+      // a customer reading it later can see WHY the price was what it was.
+      const dd = Number(l.dealDisc) || 0;
+      if(dd > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;${escapeHtml(l.deal || 'deal')}</span><span>−${money(dd)}</span></div>`;
+      const od = round2((Number(l.disc)||0) - sd - dd);
       if(od > 0) h += `<div class="r-line" style="color:#777;"><span class="r-l">&nbsp;&nbsp;discount</span><span>−${money(od)}</span></div>`;
     });
 
@@ -8633,7 +8931,9 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       out.push(pad(l.name + (Math.abs(q)!==1 ? ' x'+Math.abs(q) : ''), money(lineNet(l))));
       const sd = Number(l.setDisc) || 0;
       if(sd > 0) out.push(pad('  set price', '-'+money(sd)));
-      const od = round2((Number(l.disc)||0) - sd);
+      const dd = Number(l.dealDisc) || 0;
+      if(dd > 0) out.push(pad('  ' + (l.deal || 'deal'), '-'+money(dd)));
+      const od = round2((Number(l.disc)||0) - sd - dd);
       if(od > 0) out.push(pad('  discount', '-'+money(od)));
     });
     out.push('-'.repeat(W));
@@ -12184,6 +12484,19 @@ var __Html5QrcodeLibrary__;(()=>{var t={449:function(t,e,r){!function(t){"use st
       }
       if(typeof raw.label === 'string' && raw.label.trim()) it.label = raw.label.trim();
       if(typeof raw.webDesc === 'string' && raw.webDesc.trim()) it.webDesc = raw.webDesc;
+      // A mix-and-match deal travels as four flat fields, all or nothing:
+      // a tag with no terms cannot fire, and terms with no tag belong to
+      // nothing. dealRules() ignores anything that does not add up anyway, but
+      // refusing half a deal at the door keeps the stock list honest.
+      if(typeof raw.dealTag === 'string' && raw.dealTag.trim()
+         && Number(raw.dealPick) >= 2 && Number(raw.dealPrice) > 0){
+        it.dealTag   = raw.dealTag.trim();
+        it.dealPick  = Math.floor(Number(raw.dealPick));
+        it.dealPrice = Number(raw.dealPrice);
+        if(typeof raw.dealExpires === 'string' && raw.dealExpires.trim()){
+          it.dealExpires = raw.dealExpires.trim();
+        }
+      }
       // Carry a set rule in; dangling ones are ignored by setMembers() until
       // the partner arrives too.
       if(raw.set && Array.isArray(raw.set.with) && Number(raw.set.price) > 0){
